@@ -17,8 +17,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install dependencies (runs prisma generate via postinstall)
         run: npm ci
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Deploy via Netlify CLI
         run: npx netlify-cli deploy --build --prod
