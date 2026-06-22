@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AreaChart,
@@ -25,7 +25,7 @@ interface Kline {
 
 const INTERVALS = ["15m", "1h", "4h", "1d"];
 
-export default function TradePage() {
+function TradePageInner() {
   const searchParams = useSearchParams();
   const defaultMode = searchParams.get("mode") === "live" ? "live" : "paper";
 
@@ -305,5 +305,13 @@ export default function TradePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TradePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-[#64748b]">Loading...</div>}>
+      <TradePageInner />
+    </Suspense>
   );
 }
