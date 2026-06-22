@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  LogOut, CreditCard, ChevronRight, Brain
+  ChevronRight, Brain, Shield
 } from "lucide-react";
 
 const nav = [
@@ -18,11 +17,7 @@ const nav = [
   { href: "/settings",  label: "Settings",    icon: Settings },
 ];
 
-interface Props {
-  user: { name?: string | null; email?: string | null };
-}
-
-export default function Sidebar({ user }: Props) {
+export default function Sidebar() {
   const pathname = usePathname();
 
   return (
@@ -30,7 +25,7 @@ export default function Sidebar({ user }: Props) {
 
       {/* Logo */}
       <div className="px-5 h-16 flex items-center border-b border-[#1e2130]">
-        <Link href="/" className="flex items-center gap-2.5 group">
+        <Link href="/dashboard" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-lg bg-[#00ff88] flex items-center justify-center shadow-[0_0_12px_rgba(0,255,136,0.4)] group-hover:shadow-[0_0_18px_rgba(0,255,136,0.6)] transition-shadow">
             <span className="text-black font-black text-sm">CT</span>
           </div>
@@ -74,40 +69,16 @@ export default function Sidebar({ user }: Props) {
         })}
       </nav>
 
-      {/* Upgrade card */}
-      <div className="px-3 pb-3">
-        <div className="p-4 rounded-xl bg-gradient-to-br from-[#7c3aed]/20 to-[#7c3aed]/5 border border-[#7c3aed]/20">
-          <div className="flex items-center gap-2 mb-2">
-            <CreditCard className="w-4 h-4 text-[#a78bfa]" />
-            <span className="text-xs font-bold text-[#a78bfa] uppercase tracking-wide">Free Plan</span>
-          </div>
-          <p className="text-xs text-[#64748b] mb-3 leading-relaxed">Upgrade to unlock live trading and unlimited bots</p>
-          <Link
-            href="/settings"
-            className="flex items-center justify-center gap-1.5 w-full py-2 bg-[#7c3aed] text-white text-xs font-semibold rounded-lg hover:bg-[#6d28d9] transition-colors"
-          >
-            Upgrade to Pro <ChevronRight className="w-3 h-3" />
-          </Link>
-        </div>
-      </div>
-
-      {/* User */}
+      {/* Personal badge */}
       <div className="px-3 pb-4 pt-2 border-t border-[#1e2130]">
-        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors group">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00ff88]/30 to-[#7c3aed]/30 flex items-center justify-center text-sm font-bold text-white flex-shrink-0 border border-white/10">
-            {user?.name?.[0]?.toUpperCase() ?? "U"}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00ff88]/30 to-[#7c3aed]/30 flex items-center justify-center flex-shrink-0 border border-white/10">
+            <Shield className="w-4 h-4 text-[#00ff88]" />
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{user?.name ?? "Trader"}</p>
-            <p className="text-xs text-[#64748b] truncate">{user?.email ?? ""}</p>
+          <div>
+            <p className="text-sm font-medium text-white">Personal Account</p>
+            <p className="text-xs text-[#64748b]">Private · Encrypted</p>
           </div>
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-[#64748b]"
-            title="Sign out"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
 
