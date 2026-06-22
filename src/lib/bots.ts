@@ -2,7 +2,8 @@
 // All bots execute paper trades by default; set config.mode = "LIVE" for real orders
 import { RSI, MACD } from "technicalindicators";
 import { prisma } from "./db";
-import { getKlines, getPrice, placeOrder } from "./binance";
+import { placeOrder } from "./binance";
+import { getPriceCG, getKlinesCG } from "./market-data";
 import { decrypt } from "./utils";
 
 // Binance enforces $10 minimum notional per order — we use $15 as safety buffer.
@@ -35,7 +36,7 @@ function shouldExecute(lastExecuted: string | null | undefined, intervalStr: str
 async function paperBuy(userId: string, symbol: string, amount: number): Promise<{ success: boolean; message: string }> {
   if (amount < MIN_ORDER_USDT) return { success: false, message: `Order too small ($${amount} < $${MIN_ORDER_USDT} minimum)` };
 
-  const price    = await getPrice(symbol);
+  const price    = await getPriceCG(symbol);
   const quantity = safeQuantity(amount / price, price);
   const total    = amount * 1.001; // include 0.1% fee
 
@@ -64,7 +65,7 @@ async function liveBuy(userId: string, symbol: string, amount: number): Promise<
   try {
     const apiKey    = decrypt(keyRecord.apiKey, encKey);
     const secretKey = decrypt(keyRecord.secretKey, encKey);
-    const price     = await getPrice(symbol);
+    const price     = await getPriceCG(symbol);
     const quantity  = safeQuantity(amount / price, price);
 
     await placeOrder(apiKey, secretKey, symbol, "BUY", quantity, keyRecord.isTestnet);
@@ -104,7 +105,7 @@ export async function executeRSIBot(botId: string, userId: string, symbol: strin
   if (!shouldExecute(config.lastExecuted, config.interval ?? "1h")) return "RSI bot not due";
 
   const tfMap: Record<string, string> = { "30m": "30m", "1h": "1h", "4h": "4h", "24h": "1d", "1d": "1d" };
-  const klines = await getKlines(symbol, tfMap[config.interval ?? "1h"] ?? "1h", 50);
+  const klines = await getKlinesCG(symbol, tfMap[config.interval ?? "1h"] ?? "1h", 50);
   if (klines.length < 15) return "RSI: insufficient data";
 
   const rsiArr = RSI.calculate({ period: 14, values: klines.map(k => k.close) });
@@ -133,7 +134,7 @@ export async function executeMACDBot(botId: string, userId: string, symbol: stri
   if (!shouldExecute(config.lastExecuted, config.interval ?? "4h")) return "MACD bot not due";
 
   const tfMap: Record<string, string> = { "1h": "1h", "4h": "4h", "24h": "1d", "1d": "1d" };
-  const klines = await getKlines(symbol, tfMap[config.interval ?? "4h"] ?? "4h", 60);
+  const klines = await getKlinesCG(symbol, tfMap[config.interval ?? "4h"] ?? "4h", 60);
   if (klines.length < 35) return "MACD: insufficient data";
 
   const macdArr = MACD.calculate({
@@ -179,7 +180,7 @@ export async function executeGridBot(botId: string, userId: string, symbol: stri
     return "Grid bot: invalid price range";
   }
 
-  const price = await getPrice(symbol);
+  const price = await getPriceCG(symbol);
   if (price < config.gridLow || price > config.gridHigh) {
     return `Grid bot: price $${price.toFixed(2)} outside range ($${config.gridLow}–$${config.gridHigh})`;
   }

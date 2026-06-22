@@ -1,5 +1,9 @@
 // Multi-source market data aggregator
 // Sources: CoinGecko (OHLCV/market), Alternative.me (Fear & Greed), CryptoPanic (news sentiment)
+// NOTE: All server-side Binance public API calls return 451 from US-hosted servers (Netlify).
+//       Functions below (getPriceCG, getKlinesCG, etc.) are used as drop-in replacements.
+import axios from "axios";
+import type { Kline } from "./binance";
 
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
@@ -148,4 +152,130 @@ export async function getVolumeTrend(symbol: string): Promise<{ ratio: number; t
   } catch {
     return { ratio: 1, trend: "STABLE" };
   }
+}
+
+// ─── Drop-in replacements for Binance public API (geo-blocked on US servers) ───
+
+export const COINGECKO_IDS = SYMBOL_MAP;
+
+function cgId(symbol: string): string {
+  const id = SYMBOL_MAP[symbol];
+  if (!id) throw new Error(`Unsupported symbol: ${symbol}`);
+  return id;
+}
+
+export async function getPriceCG(symbol: string): Promise<number> {
+  const id = cgId(symbol);
+  const { data } = await axios.get<Record<string, { usd: number }>>(
+    `${COINGECKO_BASE}/simple/price`,
+    { params: { ids: id, vs_currencies: "usd" } }
+  );
+  return data[id].usd;
+}
+
+export async function getPricesCG(symbols: string[]): Promise<Record<string, number>> {
+  const valid = symbols.filter(s => SYMBOL_MAP[s]);
+  const ids = valid.map(s => SYMBOL_MAP[s]).join(",");
+  const { data } = await axios.get<Record<string, { usd: number }>>(
+    `${COINGECKO_BASE}/simple/price`,
+    { params: { ids, vs_currencies: "usd" } }
+  );
+  const result: Record<string, number> = {};
+  valid.forEach(sym => {
+    const id = SYMBOL_MAP[sym];
+    if (data[id]) result[sym] = data[id].usd;
+  });
+  return result;
+}
+
+export async function get24hrStatsCG(symbol: string) {
+  const id = cgId(symbol);
+  const { data } = await axios.get<Record<string, { usd: number; usd_24h_change: number; usd_24h_vol: number }>>(
+    `${COINGECKO_BASE}/simple/price`,
+    { params: { ids: id, vs_currencies: "usd", include_24hr_change: true, include_24hr_vol: true } }
+  );
+  const d = data[id];
+  return {
+    symbol,
+    price: d.usd,
+    priceChange: d.usd * (d.usd_24h_change / 100),
+    priceChangePercent: d.usd_24h_change,
+    volume: d.usd_24h_vol / d.usd,
+    quoteVolume: d.usd_24h_vol,
+    high: d.usd * 1.01,
+    low: d.usd * 0.99,
+  };
+}
+
+export async function get24hrStatsBatchCG(
+  symbols: string[]
+): Promise<Record<string, { price: number; priceChangePercent: number }>> {
+  const valid = symbols.filter(s => SYMBOL_MAP[s]);
+  const ids = valid.map(s => SYMBOL_MAP[s]).join(",");
+  const { data } = await axios.get<Record<string, { usd: number; usd_24h_change: number }>>(
+    `${COINGECKO_BASE}/simple/price`,
+    { params: { ids, vs_currencies: "usd", include_24hr_change: true } }
+  );
+  const result: Record<string, { price: number; priceChangePercent: number }> = {};
+  valid.forEach(sym => {
+    const id = SYMBOL_MAP[sym];
+    if (data[id]) result[sym] = { price: data[id].usd, priceChangePercent: data[id].usd_24h_change };
+  });
+  return result;
+}
+
+// Returns Kline-compatible array using CoinGecko.
+// 4H/1D: uses ohlc endpoint (real high/low, needed for ADX).
+// 1H/30m: uses market_chart hourly (high/low estimated from adjacent closes).
+export async function getKlinesCG(symbol: string, interval: string, limit: number): Promise<Kline[]> {
+  const id = cgId(symbol);
+
+  if (interval === "4h" || interval === "12h") {
+    const days = limit > 42 ? 14 : 7;
+    const { data } = await axios.get<[number, number, number, number, number][]>(
+      `${COINGECKO_BASE}/coins/${id}/ohlc`,
+      { params: { vs_currency: "usd", days } }
+    );
+    return data.slice(-limit).map(([t, o, h, l, c]) => ({
+      openTime: t - 4 * 3600e3,
+      open: o, high: h, low: l, close: c,
+      volume: 0,
+      closeTime: t - 1,
+    }));
+  }
+
+  if (interval === "1d" || interval === "24h") {
+    const days = Math.max(limit + 10, 90);
+    const { data } = await axios.get<[number, number, number, number, number][]>(
+      `${COINGECKO_BASE}/coins/${id}/ohlc`,
+      { params: { vs_currency: "usd", days } }
+    );
+    return data.slice(-limit).map(([t, o, h, l, c]) => ({
+      openTime: t - 86400e3,
+      open: o, high: h, low: l, close: c,
+      volume: 0,
+      closeTime: t - 1,
+    }));
+  }
+
+  // 1h / 30m — hourly market_chart
+  const days = Math.min(Math.ceil(limit / 24) + 2, 90);
+  const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+    `${COINGECKO_BASE}/coins/${id}/market_chart`,
+    { params: { vs_currency: "usd", days, interval: "hourly" } }
+  );
+  const prices  = data.prices.slice(-limit);
+  const volumes = data.total_volumes.slice(-limit);
+  return prices.map(([t, c], i) => {
+    const prev = i > 0 ? prices[i - 1][1] : c;
+    return {
+      openTime: t - 3600e3,
+      open: prev,
+      high: Math.max(c, prev),
+      low: Math.min(c, prev),
+      close: c,
+      volume: volumes[i]?.[1] ?? 0,
+      closeTime: t - 1,
+    };
+  });
 }

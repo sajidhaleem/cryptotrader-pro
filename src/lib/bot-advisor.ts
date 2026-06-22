@@ -4,6 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
 import axios from "axios";
+import { COINGECKO_IDS } from "./market-data";
 
 export interface BotRecommendation {
   strategy: "DCA" | "RSI" | "MACD" | "GRID";
@@ -29,22 +30,6 @@ export interface MarketSnapshot {
   volumeRatio: number;
   change24h: number;
 }
-
-// Map Binance trading pairs → CoinGecko coin IDs
-const COINGECKO_IDS: Record<string, string> = {
-  BTCUSDT:  "bitcoin",
-  ETHUSDT:  "ethereum",
-  BNBUSDT:  "binancecoin",
-  SOLUSDT:  "solana",
-  ADAUSDT:  "cardano",
-  DOGEUSDT: "dogecoin",
-  XRPUSDT:  "ripple",
-  AVAXUSDT: "avalanche-2",
-  DOTUSDT:  "polkadot",
-  LINKUSDT: "chainlink",
-  MATICUSDT:"matic-network",
-  LTCUSDT:  "litecoin",
-};
 
 const CG = "https://api.coingecko.com/api/v3";
 

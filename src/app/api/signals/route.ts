@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getKlines } from "@/lib/binance";
+import { getKlinesCG } from "@/lib/market-data";
 import { analyzeSignals } from "@/lib/signals";
 
 export async function GET(req: NextRequest) {
@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const interval = searchParams.get("interval") ?? "4h";
 
   try {
-    const klines = await getKlines(symbol, interval, 100);
+    const klines = await getKlinesCG(symbol, interval, 100);
     const closes = klines.map((k) => k.close);
     const signal = analyzeSignals(closes);
     const latestKline = klines[klines.length - 1];

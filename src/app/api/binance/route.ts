@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { get24hrStats, getKlines, getPrices, getOrderBook, POPULAR_PAIRS } from "@/lib/binance";
+import { getOrderBook, POPULAR_PAIRS } from "@/lib/binance";
+import { getPricesCG, get24hrStatsCG, getKlinesCG } from "@/lib/market-data";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -10,15 +11,15 @@ export async function GET(req: NextRequest) {
   try {
     switch (action) {
       case "prices": {
-        const prices = await getPrices(POPULAR_PAIRS);
+        const prices = await getPricesCG(POPULAR_PAIRS);
         return Response.json({ prices });
       }
       case "ticker": {
-        const stats = await get24hrStats(symbol);
+        const stats = await get24hrStatsCG(symbol);
         return Response.json({ stats });
       }
       case "klines": {
-        const klines = await getKlines(symbol, interval, 100);
+        const klines = await getKlinesCG(symbol, interval, 100);
         return Response.json({ klines });
       }
       case "orderbook": {

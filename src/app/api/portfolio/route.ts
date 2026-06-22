@@ -1,5 +1,6 @@
 import { prisma, getOwnerId } from "@/lib/db";
-import { getAccountBalance, get24hrStatsBatch, POPULAR_PAIRS } from "@/lib/binance";
+import { getAccountBalance, POPULAR_PAIRS } from "@/lib/binance";
+import { get24hrStatsBatchCG } from "@/lib/market-data";
 import { decrypt } from "@/lib/utils";
 
 export async function GET() {
@@ -34,8 +35,8 @@ export async function GET() {
     }
   }
 
-  // Get current prices + 24h change for top pairs
-  const ticker24h = await get24hrStatsBatch(POPULAR_PAIRS);
+  // Get current prices + 24h change for top pairs (via CoinGecko — Binance public API is geo-blocked on Netlify)
+  const ticker24h = await get24hrStatsBatchCG(POPULAR_PAIRS);
   const prices: Record<string, number> = {};
   const priceChanges: Record<string, number> = {};
   for (const [sym, t] of Object.entries(ticker24h)) {
