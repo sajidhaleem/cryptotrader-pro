@@ -36,12 +36,24 @@ export async function executePaperTrade(
       };
     }
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { paperBalance: user.paperBalance - cost },
-    });
+    const newBalance = user.paperBalance - cost;
+    await prisma.$transaction([
+      prisma.paperTrade.create({
+        data: { userId, symbol, side: "BUY", quantity, price, total, pnl: 0, status: "FILLED" },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { paperBalance: newBalance },
+      }),
+    ]);
+
+    return {
+      success: true,
+      message: `Paper BUY executed at $${price.toFixed(2)}`,
+      trade: { symbol, side, quantity, price, total },
+      newBalance,
+    };
   } else {
-    // For SELL, calculate PnL from avg buy price
     const buys = await prisma.paperTrade.findMany({
       where: { userId, symbol, side: "BUY" },
       orderBy: { createdAt: "desc" },
@@ -53,54 +65,25 @@ export async function executePaperTrade(
 
     const revenue = total - fee;
     const pnl = (price - avgBuyPrice) * quantity;
+    const newBalance = user.paperBalance + revenue;
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { paperBalance: user.paperBalance + revenue },
-    });
+    await prisma.$transaction([
+      prisma.paperTrade.create({
+        data: { userId, symbol, side: "SELL", quantity, price, total, pnl, status: "FILLED" },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { paperBalance: newBalance },
+      }),
+    ]);
 
-    await prisma.paperTrade.create({
-      data: {
-        userId,
-        symbol,
-        side: "SELL",
-        quantity,
-        price,
-        total,
-        pnl,
-        status: "FILLED",
-      },
-    });
-
-    const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
     return {
       success: true,
       message: `Paper SELL executed at $${price.toFixed(2)}`,
       trade: { symbol, side, quantity, price, total },
-      newBalance: updatedUser?.paperBalance,
+      newBalance,
     };
   }
-
-  await prisma.paperTrade.create({
-    data: {
-      userId,
-      symbol,
-      side: "BUY",
-      quantity,
-      price,
-      total,
-      pnl: 0,
-      status: "FILLED",
-    },
-  });
-
-  const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
-  return {
-    success: true,
-    message: `Paper BUY executed at $${price.toFixed(2)}`,
-    trade: { symbol, side, quantity, price, total },
-    newBalance: updatedUser?.paperBalance,
-  };
 }
 
 export async function getPaperPortfolio(userId: string) {

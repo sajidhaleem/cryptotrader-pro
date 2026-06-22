@@ -72,13 +72,11 @@ export default function DashboardPage() {
   const [data, setData] = useState<{
     paperBalance: number;
     prices: Record<string, number>;
+    priceChanges: Record<string, number>;
     stats: { totalTrades: number; paperTradeCount: number; activeBots: number };
     liveBalances: null | unknown[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [priceChanges] = useState(() =>
-    Object.fromEntries(PAIRS.map((p) => [p, (Math.random() - 0.4) * 8]))
-  );
   const [chart] = useState(() =>
     Array.from({ length: 30 }, (_, i) => ({
       day: `Day ${i + 1}`,
@@ -204,7 +202,7 @@ export default function DashboardPage() {
                 key={pair}
                 symbol={pair}
                 price={data?.prices?.[pair] ?? 0}
-                pct={priceChanges[pair]}
+                pct={data?.priceChanges?.[pair] ?? 0}
               />
             ))}
           </div>

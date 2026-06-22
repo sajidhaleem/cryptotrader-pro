@@ -1,6 +1,8 @@
 // Autonomous trade advisor — generates proposals for user consent
 import { prisma } from "./db";
 import { analyzeSymbol } from "./intelligence";
+import { placeOrder } from "./binance";
+import { decrypt } from "./utils";
 
 const WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "LINKUSDT", "AVAXUSDT"];
 const MIN_CONFIDENCE = 55; // only propose if confidence >= 55%
@@ -25,7 +27,13 @@ export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" =
 
   const created = [];
   for (const symbol of WATCHLIST) {
-    const report = await analyzeSymbol(symbol, userId);
+    let report;
+    try {
+      report = await analyzeSymbol(symbol, userId);
+    } catch (err) {
+      console.warn(`[Advisor] analyzeSymbol failed for ${symbol}:`, err);
+      continue;
+    }
     if (!report || !report.side || report.confidence < MIN_CONFIDENCE) continue;
     if (report.recommendation === "HOLD") continue;
 
@@ -112,7 +120,6 @@ export async function approveProposal(proposalId: string, userId: string) {
     throw new Error("Proposal has expired — market conditions may have changed");
   }
 
-  // Execute the trade (paper mode)
   if (proposal.mode === "PAPER") {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { paperBalance: true } });
     const balance = user?.paperBalance ?? 0;
@@ -140,6 +147,53 @@ export async function approveProposal(proposalId: string, userId: string) {
       prisma.user.update({
         where: { id: userId },
         data: { paperBalance: { increment: balanceDelta } },
+      }),
+      prisma.tradeProposal.update({
+        where: { id: proposalId },
+        data: { status: "EXECUTED", approvedAt: new Date(), executedAt: new Date() },
+      }),
+    ]);
+  } else {
+    // LIVE mode — place real Binance order
+    const encKey = process.env.ENCRYPTION_KEY ?? "";
+    const apiKeyRecord = await prisma.binanceApiKey.findFirst({
+      where: { userId, isActive: true },
+    });
+
+    if (!apiKeyRecord) {
+      throw new Error("No active Binance API key — add one in Settings to enable live trading");
+    }
+
+    let decryptedKey: string;
+    let decryptedSecret: string;
+    try {
+      decryptedKey = decrypt(apiKeyRecord.apiKey, encKey);
+      decryptedSecret = decrypt(apiKeyRecord.secretKey, encKey);
+    } catch {
+      throw new Error("Failed to decrypt API keys — please re-add your Binance keys in Settings");
+    }
+
+    await placeOrder(
+      decryptedKey,
+      decryptedSecret,
+      proposal.symbol,
+      proposal.side,
+      proposal.quantity,
+      apiKeyRecord.isTestnet,
+    );
+
+    await prisma.$transaction([
+      prisma.trade.create({
+        data: {
+          userId,
+          symbol: proposal.symbol,
+          side: proposal.side,
+          quantity: proposal.quantity,
+          price: proposal.entryPrice,
+          total: proposal.quantity * proposal.entryPrice,
+          fee: 0,
+          proposalId: proposal.id,
+        },
       }),
       prisma.tradeProposal.update({
         where: { id: proposalId },

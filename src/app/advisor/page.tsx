@@ -243,54 +243,77 @@ export default function AdvisorPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await fetch("/api/proposals").then((r) => r.json());
-    setProposals(data.proposals ?? []);
-    setLoading(false);
-  }, []);
+    try {
+      const r = await fetch("/api/proposals");
+      const data = await r.json();
+      setProposals(data.proposals ?? []);
+    } catch {
+      showToast("Failed to load proposals — check your connection", false);
+    } finally {
+      setLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const generate = async () => {
     setGenerating(true);
-    const data = await fetch("/api/proposals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "generate", mode }),
-    }).then((r) => r.json());
-
-    if (data.generated > 0) {
-      showToast(`${data.generated} new opportunity${data.generated > 1 ? "ies" : "y"} found!`, true);
-    } else {
-      showToast("No high-confidence opportunities right now. Will check again in 30 minutes.", false);
+    try {
+      const r = await fetch("/api/proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate", mode }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        showToast(data.error ?? "Analysis failed", false);
+      } else if (data.generated > 0) {
+        showToast(`${data.generated} new ${data.generated === 1 ? "opportunity" : "opportunities"} found!`, true);
+      } else {
+        showToast("No high-confidence opportunities right now. Will check again in 30 minutes.", false);
+      }
+      await load();
+    } catch {
+      showToast("Scan failed — network error", false);
+    } finally {
+      setGenerating(false);
     }
-    await load();
-    setGenerating(false);
   };
 
   const approve = async (id: string) => {
     setActionLoading(id + "_approve");
-    const data = await fetch("/api/proposals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "approve", proposalId: id }),
-    }).then((r) => r.json());
-
-    if (data.success) {
-      showToast("Trade executed successfully!", true);
-      setProposals((prev) => prev.filter((p) => p.id !== id));
-    } else {
-      showToast(data.error ?? "Failed to execute trade", false);
+    try {
+      const r = await fetch("/api/proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", proposalId: id }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        showToast("Trade executed successfully!", true);
+        setProposals((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        showToast(data.error ?? "Failed to execute trade", false);
+      }
+    } catch {
+      showToast("Network error — trade not executed", false);
+    } finally {
+      setActionLoading(null);
     }
-    setActionLoading(null);
   };
 
   const deny = async (id: string) => {
     setActionLoading(id + "_deny");
-    await fetch("/api/proposals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "deny", proposalId: id }),
-    });
-    setProposals((prev) => prev.filter((p) => p.id !== id));
-    setActionLoading(null);
+    try {
+      await fetch("/api/proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deny", proposalId: id }),
+      });
+      setProposals((prev) => prev.filter((p) => p.id !== id));
+    } catch {
+      showToast("Network error — could not deny", false);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   useEffect(() => { load(); }, [load]);

@@ -82,6 +82,24 @@ export async function get24hrStats(symbol: string) {
   };
 }
 
+export async function get24hrStatsBatch(
+  symbols: string[]
+): Promise<Record<string, { price: number; priceChangePercent: number }>> {
+  const { data } = await axios.get<{ symbol: string; lastPrice: string; priceChangePercent: string }[]>(
+    `${BASE_URL}/api/v3/ticker/24hr`
+  );
+  const result: Record<string, { price: number; priceChangePercent: number }> = {};
+  data.forEach((t) => {
+    if (symbols.includes(t.symbol)) {
+      result[t.symbol] = {
+        price: parseFloat(t.lastPrice),
+        priceChangePercent: parseFloat(t.priceChangePercent),
+      };
+    }
+  });
+  return result;
+}
+
 export async function getKlines(
   symbol: string,
   interval: string = "1h",

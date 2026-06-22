@@ -24,8 +24,12 @@ export default async function handler() {
 
     let totalGenerated = 0;
     for (const user of users) {
-      const results = await generateProposals(user.id, "PAPER");
-      totalGenerated += results.length;
+      try {
+        const results = await generateProposals(user.id, "PAPER");
+        totalGenerated += results.length;
+      } catch (err) {
+        console.warn(`[Scheduled] generateProposals failed for user ${user.id}:`, err);
+      }
     }
 
     console.log(`[Scheduled Analysis] Processed ${users.length} users, generated ${totalGenerated} proposals`);
