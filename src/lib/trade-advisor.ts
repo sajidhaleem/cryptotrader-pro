@@ -4,9 +4,13 @@ import { analyzeSymbol } from "./intelligence";
 import { placeOrder } from "./binance";
 import { decrypt } from "./utils";
 
-const WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "LINKUSDT", "AVAXUSDT"];
-const MIN_CONFIDENCE = 55; // only propose if confidence >= 55%
-const PROPOSAL_TTL_HOURS = 4; // proposals expire after 4 hours
+const WATCHLIST = [
+  "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT",
+  "ADAUSDT", "XRPUSDT", "LINKUSDT", "DOTUSDT", "MATICUSDT",
+  "LTCUSDT", "DOGEUSDT",
+];
+const MIN_CONFIDENCE = 60; // multi-timeframe engine — higher bar for quality
+const PROPOSAL_TTL_HOURS = 6; // 6h expiry — 1h/4h signals stay valid longer
 
 export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" = "PAPER") {
   // Don't spam — check if we already have recent pending proposals
@@ -17,7 +21,7 @@ export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" =
       createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }, // last 1 hour
     },
   });
-  if (recentCount >= 3) return []; // max 3 pending proposals at a time
+  if (recentCount >= 5) return []; // max 5 pending proposals at a time
 
   // Expire old pending proposals
   await prisma.tradeProposal.updateMany({
@@ -93,7 +97,7 @@ export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" =
       },
     }).catch(() => null);
 
-    if (created.length >= 2) break; // max 2 new proposals per run
+    if (created.length >= 3) break; // max 3 new proposals per run
   }
 
   return created;

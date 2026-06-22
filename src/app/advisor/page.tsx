@@ -26,6 +26,9 @@ interface Reasoning {
   fearGreedLabel: string;
   riskRewardRatio: number;
   positionSizePct: number;
+  trendStrength?: number;
+  multiTFAlignment?: boolean;
+  atr?: number;
   factors: Factor[];
   analysedAt: string;
 }
@@ -118,11 +121,25 @@ function ProposalCard({ proposal, onApprove, onDeny, loading }: {
       <div className="p-5" style={{ background: `linear-gradient(135deg, ${sideColor}08, transparent)` }}>
         <div className="flex items-start justify-between mb-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-lg font-black text-white">{proposal.symbol.replace("USDT", "/USDT")}</span>
               <span className="px-2 py-0.5 rounded-lg text-xs font-bold" style={{ background: `${sideColor}20`, color: sideColor }}>
                 {isBuy ? "▲ BUY" : "▼ SELL"}
               </span>
+              {reasoning.multiTFAlignment && (
+                <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/25">
+                  ✓ 3-TF ALIGNED
+                </span>
+              )}
+              {reasoning.trendStrength != null && (
+                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                  reasoning.trendStrength > 35 ? "bg-[#7c3aed]/15 text-[#a78bfa] border-[#7c3aed]/25" :
+                  reasoning.trendStrength > 20 ? "bg-[#f59e0b]/10 text-[#f59e0b] border-[#f59e0b]/20" :
+                  "bg-white/5 text-[#64748b] border-white/5"
+                }`}>
+                  ADX {reasoning.trendStrength.toFixed(0)}
+                </span>
+              )}
               <span className="text-xs text-[#64748b]">{proposal.mode}</span>
             </div>
             <p className="text-sm text-[#94a3b8] leading-relaxed">{reasoning.summary}</p>
@@ -316,7 +333,12 @@ export default function AdvisorPage() {
     }
   };
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    // Auto-refresh proposals every 5 minutes
+    const id = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [load]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -348,7 +370,7 @@ export default function AdvisorPage() {
             <h1 className="text-2xl font-black text-white">AI Advisor</h1>
           </div>
           <p className="text-[#64748b] text-sm">
-            Autonomous analysis across 8 market signals. Review each proposal and give consent to execute.
+            13 indicators across 1H + 4H + 1D timeframes. ATR-based stops, ADX trend filter, candlestick patterns. You just say yes or no.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -393,9 +415,9 @@ export default function AdvisorPage() {
       {/* How it works */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { icon: BarChart3, label: "8 Signals", desc: "RSI, MACD, BB, EMA, Fear & Greed, Volume, News, Momentum", color: "#06b6d4" },
+          { icon: BarChart3, label: "13 Signals", desc: "RSI/MACD/BB/EMA across 1H+4H+1D, Stoch RSI, candlesticks, order book, sentiment", color: "#06b6d4" },
           { icon: Brain, label: "AI Scores", desc: "Weighted scoring with per-user learned accuracy", color: "#7c3aed" },
-          { icon: TrendingUp, label: "Proposals", desc: "Only high-confidence (55%+) trades surfaced", color: "#00ff88" },
+          { icon: TrendingUp, label: "Proposals", desc: "60%+ confidence threshold + multi-timeframe alignment required", color: "#00ff88" },
           { icon: Zap, label: "You Consent", desc: "One tap to execute — you're always in control", color: "#f59e0b" },
         ].map((item) => (
           <div key={item.label} className="p-3 rounded-xl border border-white/5 bg-white/[0.015] text-center">
