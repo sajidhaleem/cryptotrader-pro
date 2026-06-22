@@ -1,8 +1,9 @@
 // Claude-powered bot strategy advisor
-// Analyzes live Binance market data and recommends the optimal bot type + config
+// Market data via CoinGecko (Binance public endpoints return 451 from US-hosted servers)
+// Trading execution still uses Binance via user's own API keys
 import Anthropic from "@anthropic-ai/sdk";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
-import { getKlines, get24hrStats } from "./binance";
+import axios from "axios";
 
 export interface BotRecommendation {
   strategy: "DCA" | "RSI" | "MACD" | "GRID";
@@ -22,34 +23,75 @@ export interface MarketSnapshot {
   rsi1h: number;
   rsi4h: number;
   bbWidth: number;
-  bbPosition: number; // 0-1, where price sits in BB range
+  bbPosition: number;
   macdHistogram: number;
   macdBullish: boolean;
   volumeRatio: number;
   change24h: number;
 }
 
+// Map Binance trading pairs → CoinGecko coin IDs
+const COINGECKO_IDS: Record<string, string> = {
+  BTCUSDT:  "bitcoin",
+  ETHUSDT:  "ethereum",
+  BNBUSDT:  "binancecoin",
+  SOLUSDT:  "solana",
+  ADAUSDT:  "cardano",
+  DOGEUSDT: "dogecoin",
+  XRPUSDT:  "ripple",
+  AVAXUSDT: "avalanche-2",
+  DOTUSDT:  "polkadot",
+  LINKUSDT: "chainlink",
+  MATICUSDT:"matic-network",
+  LTCUSDT:  "litecoin",
+};
+
+const CG = "https://api.coingecko.com/api/v3";
+
 async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
-  const [klines1h, klines4h, stats] = await Promise.all([
-    getKlines(symbol, "1h", 100),
-    getKlines(symbol, "4h", 100),
-    get24hrStats(symbol),
+  const coinId = COINGECKO_IDS[symbol];
+  if (!coinId) throw new Error(`Unsupported symbol: ${symbol}. Supported: ${Object.keys(COINGECKO_IDS).join(", ")}`);
+
+  const [chart1h, ohlc4h, priceData] = await Promise.all([
+    // ~120 hourly close prices + volumes (5 days × 24h)
+    axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+      `${CG}/coins/${coinId}/market_chart`,
+      { params: { vs_currency: "usd", days: 5, interval: "hourly" } }
+    ),
+    // ~42 OHLCV candles at 4H resolution (7 days × 6 candles/day)
+    axios.get<[number, number, number, number, number][]>(
+      `${CG}/coins/${coinId}/ohlc`,
+      { params: { vs_currency: "usd", days: 7 } }
+    ),
+    // Current price + 24h change
+    axios.get<Record<string, { usd: number; usd_24h_change: number }>>(
+      `${CG}/simple/price`,
+      { params: { ids: coinId, vs_currencies: "usd", include_24hr_change: true } }
+    ),
   ]);
 
-  const closes1h = klines1h.map((k) => k.close);
-  const closes4h = klines4h.map((k) => k.close);
+  const closes1h  = chart1h.data.prices.map(([, p]) => p);
+  const volumes1h = chart1h.data.total_volumes.map(([, v]) => v);
 
-  // RSI on 1H and 4H
+  const ohlcData  = ohlc4h.data; // [timestamp, open, high, low, close]
+  const closes4h  = ohlcData.map(c => c[4]);
+  const highs4h   = ohlcData.map(c => c[2]);
+  const lows4h    = ohlcData.map(c => c[3]);
+
+  const coinInfo  = priceData.data[coinId];
+  const currentPrice = coinInfo.usd;
+  const change24h    = coinInfo.usd_24h_change;
+
+  // RSI — 1H and 4H
   const rsiArr1h = RSI.calculate({ period: 14, values: closes1h });
   const rsiArr4h = RSI.calculate({ period: 14, values: closes4h });
   const rsi1h = rsiArr1h[rsiArr1h.length - 1] ?? 50;
   const rsi4h = rsiArr4h[rsiArr4h.length - 1] ?? 50;
 
-  // Bollinger Bands width and position (1H)
+  // Bollinger Bands width + position (1H)
   const bbArr = BollingerBands.calculate({ period: 20, values: closes1h, stdDev: 2 });
   const bb = bbArr[bbArr.length - 1];
-  const bbWidth = bb ? (bb.upper - bb.lower) / bb.middle : 0.02;
-  const currentPrice = closes1h[closes1h.length - 1];
+  const bbWidth    = bb ? (bb.upper - bb.lower) / bb.middle : 0.02;
   const bbPosition = bb && bb.upper !== bb.lower
     ? (currentPrice - bb.lower) / (bb.upper - bb.lower)
     : 0.5;
@@ -59,30 +101,25 @@ async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
     values: closes4h, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9,
     SimpleMAOscillator: false, SimpleMASignal: false,
   });
-  const macdLast = macdArr[macdArr.length - 1];
-  const macdPrev = macdArr[macdArr.length - 2];
+  const macdLast     = macdArr[macdArr.length - 1];
+  const macdPrev     = macdArr[macdArr.length - 2];
   const macdHistogram = macdLast?.histogram ?? 0;
-  const macdBullish = (macdHistogram > 0) || ((macdPrev?.histogram ?? 0) < 0 && macdHistogram >= 0);
+  const macdBullish   = (macdHistogram > 0) || ((macdPrev?.histogram ?? 0) < 0 && macdHistogram >= 0);
 
-  // ADX trend strength (4H)
+  // ADX trend strength (4H) — needs high/low/close
   let adxValue = 20;
   try {
-    const adxArr = ADX.calculate({
-      period: 14,
-      high: klines4h.map((k) => k.high),
-      low: klines4h.map((k) => k.low),
-      close: closes4h,
-    });
+    const adxArr = ADX.calculate({ period: 14, high: highs4h, low: lows4h, close: closes4h });
     adxValue = adxArr[adxArr.length - 1]?.adx ?? 20;
-  } catch { /* keep default */ }
+  } catch { /* keep default 20 (weak/no trend) */ }
 
   // Volume surge vs 24h baseline
-  const recentVol = klines1h.slice(-3).reduce((s, k) => s + k.volume, 0) / 3;
-  const baselineVol = klines1h.slice(-24, -3).reduce((s, k) => s + k.volume, 0) / 21;
+  const recentVol  = volumes1h.slice(-3).reduce((s, v) => s + v, 0) / 3;
+  const baselineVol = volumes1h.slice(-24, -3).reduce((s, v) => s + v, 0) / 21;
   const volumeRatio = baselineVol > 0 ? recentVol / baselineVol : 1;
 
   return {
-    price: stats.price,
+    price: currentPrice,
     adx: adxValue,
     rsi1h,
     rsi4h,
@@ -91,7 +128,7 @@ async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
     macdHistogram,
     macdBullish,
     volumeRatio,
-    change24h: stats.priceChangePercent,
+    change24h,
   };
 }
 
@@ -205,7 +242,7 @@ Provide your recommendation as JSON:
 
   const parsed = JSON.parse(text) as Omit<BotRecommendation, "symbol" | "rawMarketData">;
 
-  // Enforce minimum safety thresholds on config — never trust the model alone
+  // Enforce minimum safety thresholds — never trust the model alone
   const cfg = parsed.config as Record<string, unknown>;
   if (typeof cfg.amount === "number" && cfg.amount < 15) cfg.amount = 15;
   if (cfg.interval === "30m" && parsed.strategy !== "DCA") cfg.interval = "1h";
