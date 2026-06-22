@@ -6,14 +6,15 @@ import { signOut } from "next-auth/react";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  LogOut, CreditCard, ChevronRight
+  LogOut, CreditCard, ChevronRight, Brain
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/advisor",   label: "AI Advisor", icon: Brain, badge: "AI" },
   { href: "/trade",     label: "Trade",       icon: Zap },
   { href: "/bots",      label: "Bots",        icon: Bot },
-  { href: "/signals",   label: "AI Signals",  icon: LineChart },
+  { href: "/signals",   label: "Signals",     icon: LineChart },
   { href: "/settings",  label: "Settings",    icon: Settings },
 ];
 
@@ -42,7 +43,7 @@ export default function Sidebar({ user }: Props) {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {nav.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           return (
             <Link
@@ -64,6 +65,9 @@ export default function Sidebar({ user }: Props) {
               )}
               <Icon className={`w-4 h-4 flex-shrink-0 ${active ? "text-black" : ""}`} />
               {label}
+              {badge && !active && (
+                <span className="ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#7c3aed]/20 text-[#a78bfa]">{badge}</span>
+              )}
               {active && <ChevronRight className="w-3.5 h-3.5 ml-auto text-black/60" />}
             </Link>
           );

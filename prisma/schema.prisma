@@ -19,13 +19,15 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts    Account[]
-  sessions    Session[]
-  apiKeys     BinanceApiKey[]
-  trades      Trade[]
-  paperTrades PaperTrade[]
-  bots        Bot[]
-  watchlist   Watchlist[]
+  accounts      Account[]
+  sessions      Session[]
+  apiKeys       BinanceApiKey[]
+  trades        Trade[]
+  paperTrades   PaperTrade[]
+  bots          Bot[]
+  watchlist     Watchlist[]
+  proposals     TradeProposal[]
+  signalWeights SignalWeight[]
 }
 
 model Account {
@@ -69,32 +71,34 @@ model BinanceApiKey {
 }
 
 model Trade {
-  id        String      @id @default(cuid())
-  userId    String
-  symbol    String
-  side      TradeSide
-  quantity  Float
-  price     Float
-  total     Float
-  fee       Float       @default(0)
-  status    TradeStatus @default(FILLED)
-  orderId   String?
-  createdAt DateTime    @default(now())
+  id         String      @id @default(cuid())
+  userId     String
+  symbol     String
+  side       TradeSide
+  quantity   Float
+  price      Float
+  total      Float
+  fee        Float       @default(0)
+  status     TradeStatus @default(FILLED)
+  orderId    String?
+  proposalId String?
+  createdAt  DateTime    @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PaperTrade {
-  id        String      @id @default(cuid())
-  userId    String
-  symbol    String
-  side      TradeSide
-  quantity  Float
-  price     Float
-  total     Float
-  pnl       Float       @default(0)
-  status    TradeStatus @default(FILLED)
-  createdAt DateTime    @default(now())
+  id         String      @id @default(cuid())
+  userId     String
+  symbol     String
+  side       TradeSide
+  quantity   Float
+  price      Float
+  total      Float
+  pnl        Float       @default(0)
+  status     TradeStatus @default(FILLED)
+  proposalId String?
+  createdAt  DateTime    @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -126,6 +130,69 @@ model Watchlist {
   @@unique([userId, symbol])
 }
 
+// AI-generated trade proposals awaiting user consent
+model TradeProposal {
+  id           String          @id @default(cuid())
+  userId       String
+  symbol       String
+  side         TradeSide
+  quantity     Float
+  entryPrice   Float
+  stopLoss     Float
+  takeProfit   Float
+  confidence   Int             // 0-100
+  reasoning    Json            // full breakdown per factor
+  status       ProposalStatus  @default(PENDING)
+  outcome      ProposalOutcome?
+  pnl          Float?
+  mode         TradeMode       @default(PAPER)
+  expiresAt    DateTime
+  approvedAt   DateTime?
+  executedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Per-user learned weights for each signal indicator
+model SignalWeight {
+  id        String   @id @default(cuid())
+  userId    String
+  indicator String   // RSI | MACD | BB | EMA | SENTIMENT | FEAR_GREED | VOLUME | NEWS
+  weight    Float    @default(1.0)
+  wins      Int      @default(0)
+  losses    Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, indicator])
+}
+
+// Global market snapshots (shared across users, cached)
+model MarketSnapshot {
+  id         String   @id @default(cuid())
+  symbol     String
+  price      Float
+  change24h  Float
+  volume24h  Float
+  marketCap  Float?
+  fearGreed  Int?
+  sentiment  Float?   // -1.0 to 1.0
+  rsi        Float?
+  macd       Float?
+  bbUpper    Float?
+  bbLower    Float?
+  bbMid      Float?
+  signal     String?  // STRONG_BUY | BUY | HOLD | SELL | STRONG_SELL
+  score      Int?     // 0-100
+  createdAt  DateTime @default(now())
+
+  @@index([symbol, createdAt])
+}
+
 enum Plan {
   FREE
   PRO
@@ -155,4 +222,23 @@ enum BotStatus {
   RUNNING
   STOPPED
   PAUSED
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  EXECUTED
+}
+
+enum ProposalOutcome {
+  WIN
+  LOSS
+  BREAKEVEN
+}
+
+enum TradeMode {
+  PAPER
+  LIVE
 }
