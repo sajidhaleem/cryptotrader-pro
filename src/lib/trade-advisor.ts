@@ -4,13 +4,14 @@ import { analyzeSymbol } from "./intelligence";
 import { placeOrder } from "./binance";
 import { decrypt } from "./utils";
 
+// Reduced to 6 pairs — each analyzeSymbol makes 3 sequential CoinGecko calls (900ms each).
+// Scanning all 12 at once exceeds CoinGecko free tier (30 req/min) and causes 429 errors.
 const WATCHLIST = [
-  "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT",
-  "ADAUSDT", "XRPUSDT", "LINKUSDT", "DOTUSDT", "MATICUSDT",
-  "LTCUSDT", "DOGEUSDT",
+  "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT",
 ];
 const MIN_CONFIDENCE = 60; // multi-timeframe engine — higher bar for quality
 const PROPOSAL_TTL_HOURS = 6; // 6h expiry — 1h/4h signals stay valid longer
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" = "PAPER") {
   // Don't spam — check if we already have recent pending proposals
@@ -38,6 +39,9 @@ export async function generateProposals(userId: string, mode: "PAPER" | "LIVE" =
       console.warn(`[Advisor] analyzeSymbol failed for ${symbol}:`, err);
       continue;
     }
+    // 2s pause between symbols — analyzeSymbol already uses 900ms internally.
+    // Together this keeps total CoinGecko calls under 30/min on the free tier.
+    await sleep(2000);
     if (!report || !report.side || report.confidence < MIN_CONFIDENCE) continue;
     if (report.recommendation === "HOLD") continue;
 

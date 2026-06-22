@@ -32,38 +32,54 @@ export interface MarketSnapshot {
 }
 
 const CG = "https://api.coingecko.com/api/v3";
+const cgSleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function cgGet<T>(url: string, params: Record<string, unknown>): Promise<T> {
+  // Retry once on 429 — wait 10s then try again.
+  try {
+    const { data } = await axios.get<T>(url, { params });
+    return data;
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status === 429) {
+      await cgSleep(10_000);
+      const { data } = await axios.get<T>(url, { params });
+      return data;
+    }
+    throw err;
+  }
+}
 
 async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
   const coinId = COINGECKO_IDS[symbol];
   if (!coinId) throw new Error(`Unsupported symbol: ${symbol}. Supported: ${Object.keys(COINGECKO_IDS).join(", ")}`);
 
-  const [chart1h, ohlc4h, priceData] = await Promise.all([
-    // ~120 hourly close prices + volumes (5 days × 24h)
-    axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
-      `${CG}/coins/${coinId}/market_chart`,
-      { params: { vs_currency: "usd", days: 5, interval: "hourly" } }
-    ),
-    // ~42 OHLCV candles at 4H resolution (7 days × 6 candles/day)
-    axios.get<[number, number, number, number, number][]>(
-      `${CG}/coins/${coinId}/ohlc`,
-      { params: { vs_currency: "usd", days: 7 } }
-    ),
-    // Current price + 24h change
-    axios.get<Record<string, { usd: number; usd_24h_change: number }>>(
-      `${CG}/simple/price`,
-      { params: { ids: coinId, vs_currencies: "usd", include_24hr_change: true } }
-    ),
-  ]);
+  // Sequential calls with delays — CoinGecko free tier is 30 req/min (1 per 2s).
+  // Parallel calls work in isolation but fail when the dashboard or signals page
+  // has recently consumed the budget. Sequential + delay keeps us under the limit.
+  const chart1h = await cgGet<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+    `${CG}/coins/${coinId}/market_chart`,
+    { vs_currency: "usd", days: 5, interval: "hourly" }
+  );
+  await cgSleep(400);
+  const ohlc4h = await cgGet<[number, number, number, number, number][]>(
+    `${CG}/coins/${coinId}/ohlc`,
+    { vs_currency: "usd", days: 7 }
+  );
+  await cgSleep(400);
+  const priceData = await cgGet<Record<string, { usd: number; usd_24h_change: number }>>(
+    `${CG}/simple/price`,
+    { ids: coinId, vs_currencies: "usd", include_24hr_change: true }
+  );
 
-  const closes1h  = chart1h.data.prices.map(([, p]) => p);
-  const volumes1h = chart1h.data.total_volumes.map(([, v]) => v);
+  const closes1h  = chart1h.prices.map(([, p]) => p);
+  const volumes1h = chart1h.total_volumes.map(([, v]) => v);
 
-  const ohlcData  = ohlc4h.data; // [timestamp, open, high, low, close]
-  const closes4h  = ohlcData.map(c => c[4]);
-  const highs4h   = ohlcData.map(c => c[2]);
-  const lows4h    = ohlcData.map(c => c[3]);
+  const closes4h = ohlc4h.map(c => c[4]);
+  const highs4h  = ohlc4h.map(c => c[2]);
+  const lows4h   = ohlc4h.map(c => c[3]);
 
-  const coinInfo  = priceData.data[coinId];
+  const coinInfo  = priceData[coinId];
   const currentPrice = coinInfo.usd;
   const change24h    = coinInfo.usd_24h_change;
 

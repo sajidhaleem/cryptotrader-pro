@@ -1,9 +1,10 @@
 // Expert Multi-Timeframe AI Intelligence Engine
 // 13 indicators across 1h + 4h + 1d with ATR stops, ADX trend filter, and candlestick patterns
+// Market data via CoinGecko — Binance public endpoints return 451 from US-hosted Netlify servers
 import { RSI, MACD, BollingerBands, EMA, ATR, ADX, StochasticRSI } from "technicalindicators";
 import { prisma } from "./db";
-import { getKlines, getOrderBook, type Kline } from "./binance";
-import { getFearGreedIndex, getNewsSentiment } from "./market-data";
+import type { Kline } from "./binance";
+import { getKlinesCG, getFearGreedIndex, getNewsSentiment } from "./market-data";
 
 export interface FactorScore {
   indicator: string;
@@ -363,15 +364,24 @@ function volumeScore(volumes: number[]): FactorScore {
   return { indicator: "VOLUME", rawValue: `${ratio.toFixed(2)}x`, signal, score, weight: 1, contribution: 0, explanation };
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 export async function analyzeSymbol(symbol: string, userId?: string): Promise<IntelligenceReport | null> {
-  const [klines1h, klines4h, klines1d, fearGreed, news, orderBook] = await Promise.all([
-    getKlines(symbol, "1h", 200),
-    getKlines(symbol, "4h", 150),
-    getKlines(symbol, "1d", 100),
+  // Sequential CoinGecko calls with small delays to stay within 30 req/min free tier limit.
+  // Binance public endpoints return 451 from Netlify's US servers — CoinGecko has no geo-block.
+  const klines1h = await getKlinesCG(symbol, "1h", 200);
+  await sleep(350);
+  const klines4h = await getKlinesCG(symbol, "4h", 150);
+  await sleep(350);
+  const klines1d = await getKlinesCG(symbol, "1d", 100);
+  await sleep(200);
+  const [fearGreed, news] = await Promise.all([
     getFearGreedIndex(),
     getNewsSentiment(symbol),
-    getOrderBook(symbol, 10).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })),
   ]);
+  // Order book requires Binance authenticated endpoint — no CoinGecko equivalent.
+  // Use neutral score so the other 12 indicators still produce a valid recommendation.
+  const orderBook = { bids: [] as [string, string][], asks: [] as [string, string][] };
 
   if (klines1h.length < 50 || klines4h.length < 50) return null;
 
