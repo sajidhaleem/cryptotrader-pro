@@ -5,6 +5,19 @@ import { prisma } from "./db";
 import { getKlines, getPrice, placeOrder } from "./binance";
 import { decrypt } from "./utils";
 
+// Binance enforces $10 minimum notional per order — we use $15 as safety buffer.
+// Orders below this are rejected with MIN_NOTIONAL error, wasting an API call.
+const MIN_ORDER_USDT = 15;
+
+// Round quantity to Binance-acceptable precision.
+// Most altcoins: 6 decimal places. High-price assets (BTC): 5 suffices.
+// Binance rejects quantities with more decimal places than the symbol's LOT_SIZE stepSize.
+function safeQuantity(quantity: number, price: number): number {
+  // High-value assets (>$1k/coin): use 5 decimal places; others: 6
+  const decimals = price > 1000 ? 5 : 6;
+  return parseFloat(quantity.toFixed(decimals));
+}
+
 interface DCAConfig   { amount: number; interval: string; lastExecuted?: string | null; mode?: string; }
 interface RSIConfig   { amount: number; interval: string; rsiLow: number; rsiHigh: number; lastExecuted?: string | null; mode?: string; }
 interface MACDConfig  { amount: number; interval: string; lastExecuted?: string | null; lastHistogram?: number | null; mode?: string; }
@@ -20,8 +33,10 @@ function shouldExecute(lastExecuted: string | null | undefined, intervalStr: str
 }
 
 async function paperBuy(userId: string, symbol: string, amount: number): Promise<{ success: boolean; message: string }> {
+  if (amount < MIN_ORDER_USDT) return { success: false, message: `Order too small ($${amount} < $${MIN_ORDER_USDT} minimum)` };
+
   const price    = await getPrice(symbol);
-  const quantity = amount / price;
+  const quantity = safeQuantity(amount / price, price);
   const total    = amount * 1.001; // include 0.1% fee
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { paperBalance: true } });
@@ -40,6 +55,8 @@ async function paperBuy(userId: string, symbol: string, amount: number): Promise
 }
 
 async function liveBuy(userId: string, symbol: string, amount: number): Promise<{ success: boolean; message: string }> {
+  if (amount < MIN_ORDER_USDT) return { success: false, message: `Order too small ($${amount} < $${MIN_ORDER_USDT} minimum)` };
+
   const encKey = process.env.ENCRYPTION_KEY ?? "";
   const keyRecord = await prisma.binanceApiKey.findFirst({ where: { userId, isActive: true } });
   if (!keyRecord) return { success: false, message: "No active Binance API key" };
@@ -48,7 +65,7 @@ async function liveBuy(userId: string, symbol: string, amount: number): Promise<
     const apiKey    = decrypt(keyRecord.apiKey, encKey);
     const secretKey = decrypt(keyRecord.secretKey, encKey);
     const price     = await getPrice(symbol);
-    const quantity  = amount / price;
+    const quantity  = safeQuantity(amount / price, price);
 
     await placeOrder(apiKey, secretKey, symbol, "BUY", quantity, keyRecord.isTestnet);
     await prisma.trade.create({
