@@ -29,12 +29,16 @@ export async function GET() {
   }
 
   // Get current prices + 24h change for top pairs (via CoinGecko — Binance public API is geo-blocked on Netlify)
-  const ticker24h = await get24hrStatsBatchCG(POPULAR_PAIRS);
   const prices: Record<string, number> = {};
   const priceChanges: Record<string, number> = {};
-  for (const [sym, t] of Object.entries(ticker24h)) {
-    prices[sym] = t.price;
-    priceChanges[sym] = t.priceChangePercent;
+  try {
+    const ticker24h = await get24hrStatsBatchCG(POPULAR_PAIRS);
+    for (const [sym, t] of Object.entries(ticker24h)) {
+      prices[sym] = t.price;
+      priceChanges[sym] = t.priceChangePercent;
+    }
+  } catch {
+    // CoinGecko rate-limited or down — return empty prices rather than crashing the dashboard
   }
 
   // Stats

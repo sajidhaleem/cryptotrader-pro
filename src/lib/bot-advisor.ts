@@ -79,7 +79,8 @@ async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
   const highs4h  = ohlc4h.map(c => c[2]);
   const lows4h   = ohlc4h.map(c => c[3]);
 
-  const coinInfo  = priceData[coinId];
+  const coinInfo = priceData[coinId];
+  if (!coinInfo) throw new Error(`CoinGecko returned no data for ${symbol} — may be rate-limited, try again in a moment`);
   const currentPrice = coinInfo.usd;
   const change24h    = coinInfo.usd_24h_change;
 

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "API key and secret are required" }, { status: 400 });
   }
 
-  const encKey = process.env.ENCRYPTION_KEY ?? "default-key-please-change-me-32!";
+  const encKey = process.env.ENCRYPTION_KEY ?? "";
 
   const key = await prisma.binanceApiKey.create({
     data: {

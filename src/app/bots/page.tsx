@@ -60,10 +60,15 @@ export default function BotsPage() {
   const [recError, setRecError]       = useState<string | null>(null);
 
   async function fetchBots() {
-    const res = await fetch("/api/bots");
-    const data = await res.json() as { bots?: Bot[] };
-    setBots(data.bots ?? []);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/bots");
+      const data = await res.json() as { bots?: Bot[] };
+      setBots(data.bots ?? []);
+    } catch {
+      // silently fail — empty state shown
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { void fetchBots(); }, []);

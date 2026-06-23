@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 const PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT", "XRPUSDT", "AVAXUSDT"];
-const INTERVALS = ["15m", "1h", "4h", "1d"];
+const INTERVALS = ["1h", "4h", "1d"];
 
 interface Kline {
   openTime: number;
