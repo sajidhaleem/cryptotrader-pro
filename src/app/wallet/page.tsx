@@ -182,16 +182,78 @@ interface WalletData {
   error: string | null;
 }
 
+const STABLES = new Set(["USDT","BUSD","USDC","TUSD","DAI","FDUSD","USDP","PYUSD","EURI","EUR","GBP"]);
+
 export default function WalletPage() {
   const [data, setData] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  function load() {
+  async function load() {
     setLoading(true);
-    fetch("/api/wallet")
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    try {
+      // Step 1: server signs the Binance request (auth + decrypt + HMAC)
+      const signRes  = await fetch("/api/wallet");
+      const signData = await signRes.json() as {
+        hasApiKey: boolean; isTestnet?: boolean;
+        signedUrl?: string; binanceKey?: string; proxyUrl?: string; error?: string;
+      };
+
+      if (!signData.hasApiKey) {
+        setData({ hasApiKey: false, assets: [], totalUsd: 0, isTestnet: false, error: null });
+        return;
+      }
+      if (signData.error || !signData.signedUrl) {
+        setData({ hasApiKey: true, assets: [], totalUsd: 0, isTestnet: signData.isTestnet ?? false, error: signData.error ?? "Could not build request." });
+        return;
+      }
+
+      // Step 2: browser POSTs to Cloudflare Worker — runs at CF edge near user, not US
+      const proxyUrl = signData.proxyUrl || "https://binance-proxy.sajidhaleem.workers.dev";
+      let rawBalances: { asset: string; free: string; locked: string }[];
+      try {
+        const binRes  = await fetch(proxyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: signData.signedUrl, apiKey: signData.binanceKey }),
+        });
+        const binData = await binRes.json() as { balances?: { asset: string; free: string; locked: string }[]; code?: number; msg?: string };
+        if (binData.code !== undefined && binData.code !== 200) {
+          throw new Error(`Binance error ${binData.code}: ${binData.msg}`);
+        }
+        rawBalances = (binData.balances ?? []).filter(
+          (b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
+        );
+      } catch (err) {
+        setData({ hasApiKey: true, assets: [], totalUsd: 0, isTestnet: signData.isTestnet ?? false, error: String(err) });
+        return;
+      }
+
+      // Step 3: fetch prices server-side (CoinGecko, not geo-blocked from Netlify)
+      const assetNames = rawBalances.map((b) => b.asset).join(",");
+      const pricesRes  = await fetch(`/api/wallet?mode=prices&assets=${assetNames}`);
+      const pricesData = await pricesRes.json() as { prices: Record<string, { price: number; change24h: number }> };
+      const prices     = pricesData.prices ?? {};
+
+      // Step 4: combine
+      const assets: WalletAsset[] = rawBalances.map((b) => {
+        const total    = parseFloat(b.free) + parseFloat(b.locked);
+        const isStable = STABLES.has(b.asset);
+        const price    = isStable ? 1 : (prices[b.asset]?.price ?? null);
+        const change24h = isStable ? 0 : (prices[b.asset]?.change24h ?? null);
+        const usdValue = price !== null ? total * price : null;
+        return { asset: b.asset, free: parseFloat(b.free), locked: parseFloat(b.locked), total, price, change24h, usdValue, allocation: 0, isStable };
+      });
+
+      const totalUsd = assets.reduce((s, a) => s + (a.usdValue ?? 0), 0);
+      assets.forEach((a) => { a.allocation = totalUsd > 0 ? ((a.usdValue ?? 0) / totalUsd) * 100 : 0; });
+      assets.sort((a, b) => (b.usdValue ?? 0) - (a.usdValue ?? 0));
+
+      setData({ hasApiKey: true, assets, totalUsd, isTestnet: signData.isTestnet ?? false, error: null });
+    } catch {
+      setData({ hasApiKey: true, assets: [], totalUsd: 0, isTestnet: false, error: "Unexpected error loading wallet." });
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
