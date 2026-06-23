@@ -84,10 +84,21 @@ export async function GET() {
     const decryptedKey = decrypt(apiKey.apiKey, encKey);
     const decryptedSecret = decrypt(apiKey.secretKey, encKey);
     rawBalances = await getAccountBalance(decryptedKey, decryptedSecret, apiKey.isTestnet);
-  } catch {
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { data?: { code?: number; msg?: string } }; message?: string };
+    const binanceCode = axiosErr?.response?.data?.code;
+    const binanceMsg  = axiosErr?.response?.data?.msg;
+    let message = "Could not fetch balances from Binance. Check your API keys in Settings.";
+    if (binanceCode === -2015 || binanceCode === -2014) {
+      message = `Invalid API key (Binance error ${binanceCode}). Testnet keys expire periodically — regenerate them at testnet.binance.vision.`;
+    } else if (binanceCode === -1021) {
+      message = "Timestamp out of sync with Binance servers. This usually self-corrects — try refreshing.";
+    } else if (binanceMsg) {
+      message = `Binance error ${binanceCode ?? ""}: ${binanceMsg}`;
+    }
     return Response.json({
       hasApiKey: true,
-      error: "Could not fetch balances from Binance. Check your API keys in Settings.",
+      error: message,
       assets: [],
       totalUsd: 0,
       isTestnet: apiKey.isTestnet,
