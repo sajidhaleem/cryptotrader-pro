@@ -140,6 +140,29 @@ function signQuery(params: Record<string, string | number>, secret: string) {
   return `${query}&signature=${signature}`;
 }
 
+async function binanceFetch(
+  url: string,
+  apiKey: string
+): Promise<Record<string, unknown>> {
+  const proxyUrl    = process.env.BINANCE_PROXY_URL;
+  const proxySecret = process.env.BINANCE_PROXY_SECRET ?? "";
+
+  if (proxyUrl) {
+    const { data } = await axios.post<Record<string, unknown>>(
+      proxyUrl,
+      { url, apiKey },
+      { headers: { "X-Proxy-Secret": proxySecret }, timeout: 12000 }
+    );
+    return data;
+  }
+
+  const { data } = await axios.get<Record<string, unknown>>(url, {
+    headers: { "X-MBX-APIKEY": apiKey },
+    timeout: 10000,
+  });
+  return data;
+}
+
 export async function getAccountBalance(
   apiKey: string,
   secretKey: string,
@@ -149,13 +172,34 @@ export async function getAccountBalance(
   const params = { timestamp: Date.now(), recvWindow: 5000 };
   const query = signQuery(params, secretKey);
 
-  const { data } = await axios.get(`${base}/api/v3/account?${query}`, {
-    headers: { "X-MBX-APIKEY": apiKey },
-  });
+  const data = await binanceFetch(`${base}/api/v3/account?${query}`, apiKey);
 
-  return data.balances.filter(
+  return (data.balances as AccountBalance[]).filter(
     (b: AccountBalance) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
   );
+}
+
+async function binanceFetchPost(
+  url: string,
+  apiKey: string
+): Promise<Record<string, unknown>> {
+  const proxyUrl    = process.env.BINANCE_PROXY_URL;
+  const proxySecret = process.env.BINANCE_PROXY_SECRET ?? "";
+
+  if (proxyUrl) {
+    const { data } = await axios.post<Record<string, unknown>>(
+      proxyUrl,
+      { url, apiKey },
+      { headers: { "X-Proxy-Secret": proxySecret }, timeout: 12000 }
+    );
+    return data;
+  }
+
+  const { data } = await axios.post<Record<string, unknown>>(url, {}, {
+    headers: { "X-MBX-APIKEY": apiKey },
+    timeout: 10000,
+  });
+  return data;
 }
 
 export async function placeOrder(
@@ -176,13 +220,7 @@ export async function placeOrder(
     recvWindow: 5000,
   };
   const query = signQuery(params, secretKey);
-
-  const { data } = await axios.post(
-    `${base}/api/v3/order?${query}`,
-    {},
-    { headers: { "X-MBX-APIKEY": apiKey } }
-  );
-  return data;
+  return binanceFetchPost(`${base}/api/v3/order?${query}`, apiKey);
 }
 
 export async function placeLimitOrder(
@@ -206,13 +244,7 @@ export async function placeLimitOrder(
     recvWindow: 5000,
   };
   const query = signQuery(params, secretKey);
-
-  const { data } = await axios.post(
-    `${base}/api/v3/order?${query}`,
-    {},
-    { headers: { "X-MBX-APIKEY": apiKey } }
-  );
-  return data;
+  return binanceFetchPost(`${base}/api/v3/order?${query}`, apiKey);
 }
 
 export async function getTradeHistory(
@@ -224,9 +256,5 @@ export async function getTradeHistory(
   const base = isTestnet ? TESTNET_URL : BASE_URL;
   const params = { symbol, timestamp: Date.now(), limit: 50 };
   const query = signQuery(params, secretKey);
-
-  const { data } = await axios.get(`${base}/api/v3/myTrades?${query}`, {
-    headers: { "X-MBX-APIKEY": apiKey },
-  });
-  return data;
+  return binanceFetch(`${base}/api/v3/myTrades?${query}`, apiKey);
 }
