@@ -140,15 +140,15 @@ function signQuery(params: Record<string, string | number>, secret: string) {
   return `${query}&signature=${signature}`;
 }
 
-async function binanceFetch(
+async function binanceFetch<T = Record<string, unknown>>(
   url: string,
   apiKey: string
-): Promise<Record<string, unknown>> {
+): Promise<T> {
   const proxyUrl    = process.env.BINANCE_PROXY_URL;
   const proxySecret = process.env.BINANCE_PROXY_SECRET ?? "";
 
   if (proxyUrl) {
-    const { data } = await axios.post<Record<string, unknown>>(
+    const { data } = await axios.post<T>(
       proxyUrl,
       { url, apiKey },
       { headers: { "X-Proxy-Secret": proxySecret }, timeout: 12000 }
@@ -156,7 +156,7 @@ async function binanceFetch(
     return data;
   }
 
-  const { data } = await axios.get<Record<string, unknown>>(url, {
+  const { data } = await axios.get<T>(url, {
     headers: { "X-MBX-APIKEY": apiKey },
     timeout: 10000,
   });
@@ -172,22 +172,22 @@ export async function getAccountBalance(
   const params = { timestamp: Date.now(), recvWindow: 5000 };
   const query = signQuery(params, secretKey);
 
-  const data = await binanceFetch(`${base}/api/v3/account?${query}`, apiKey);
+  const data = await binanceFetch<{ balances: AccountBalance[] }>(`${base}/api/v3/account?${query}`, apiKey);
 
-  return (data.balances as AccountBalance[]).filter(
+  return data.balances.filter(
     (b: AccountBalance) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
   );
 }
 
-async function binanceFetchPost(
+async function binanceFetchPost<T = Record<string, unknown>>(
   url: string,
   apiKey: string
-): Promise<Record<string, unknown>> {
+): Promise<T> {
   const proxyUrl    = process.env.BINANCE_PROXY_URL;
   const proxySecret = process.env.BINANCE_PROXY_SECRET ?? "";
 
   if (proxyUrl) {
-    const { data } = await axios.post<Record<string, unknown>>(
+    const { data } = await axios.post<T>(
       proxyUrl,
       { url, apiKey },
       { headers: { "X-Proxy-Secret": proxySecret }, timeout: 12000 }
@@ -195,11 +195,18 @@ async function binanceFetchPost(
     return data;
   }
 
-  const { data } = await axios.post<Record<string, unknown>>(url, {}, {
+  const { data } = await axios.post<T>(url, {}, {
     headers: { "X-MBX-APIKEY": apiKey },
     timeout: 10000,
   });
   return data;
+}
+
+export interface BinanceOrderResult {
+  fills?: { price: string; qty: string }[];
+  orderId?: number;
+  symbol?: string;
+  status?: string;
 }
 
 export async function placeOrder(
@@ -209,7 +216,7 @@ export async function placeOrder(
   side: "BUY" | "SELL",
   quantity: number,
   isTestnet = false
-) {
+): Promise<BinanceOrderResult> {
   const base = isTestnet ? TESTNET_URL : BASE_URL;
   const params = {
     symbol,
@@ -220,7 +227,7 @@ export async function placeOrder(
     recvWindow: 5000,
   };
   const query = signQuery(params, secretKey);
-  return binanceFetchPost(`${base}/api/v3/order?${query}`, apiKey);
+  return binanceFetchPost<BinanceOrderResult>(`${base}/api/v3/order?${query}`, apiKey);
 }
 
 export async function placeLimitOrder(

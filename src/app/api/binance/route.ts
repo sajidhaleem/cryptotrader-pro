@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const decryptedSecret = decrypt(apiKeyRecord.secretKey, encKey);
     const order = await placeOrder(decryptedKey, decryptedSecret, symbol, side, quantity, apiKeyRecord.isTestnet);
 
-    const fillPrice = order.fills?.length > 0 ? parseFloat(order.fills[0].price) : 0;
+    const fillPrice = order.fills && order.fills.length > 0 ? parseFloat(order.fills[0].price) : 0;
     await prisma.trade.create({
       data: {
         userId,
