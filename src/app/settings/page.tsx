@@ -52,17 +52,11 @@ export default function SettingsPage() {
     fetchKeys();
   }
 
-  const plans = [
-    { name: "Free", price: "$0/mo", features: ["Paper trading", "5 pairs signals", "1 bot"], current: true, color: "border-[#1e2130]" },
-    { name: "Pro", price: "$29/mo", features: ["Live trading", "50+ signals", "Unlimited bots", "Advanced analytics"], current: false, color: "border-[#7c3aed]" },
-    { name: "Enterprise", price: "$99/mo", features: ["Everything in Pro", "Multi-account", "API access", "Custom strategies"], current: false, color: "border-[#00ff88]" },
-  ];
-
   return (
     <div className="p-6 space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-[#64748b] text-sm mt-1">Manage your account, API keys, and subscription</p>
+        <p className="text-[#64748b] text-sm mt-1">Manage your account and API keys</p>
       </div>
 
       {msg && (
@@ -172,34 +166,6 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* Subscription */}
-      <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-6">
-        <h2 className="font-semibold text-white mb-5">Subscription Plan</h2>
-        <div className="grid md:grid-cols-3 gap-4">
-          {plans.map((plan) => (
-            <div key={plan.name} className={`p-5 rounded-xl border-2 ${plan.color} ${plan.current ? "bg-[#1a1f2e]" : ""}`}>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-white">{plan.name}</h3>
-                {plan.current && <span className="text-xs bg-[#00ff88]/10 text-[#00ff88] px-2 py-0.5 rounded-full">Current</span>}
-              </div>
-              <p className="text-xl font-bold text-white mb-3">{plan.price}</p>
-              <ul className="space-y-1.5 mb-4">
-                {plan.features.map((f) => (
-                  <li key={f} className="text-xs text-[#64748b] flex items-start gap-1.5">
-                    <span className="text-[#00ff88] mt-0.5">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              {!plan.current && (
-                <button className={`w-full py-2 rounded-xl text-xs font-semibold transition-colors ${plan.name === "Pro" ? "bg-[#7c3aed] text-white hover:bg-[#6d28d9]" : "bg-[#00ff88] text-black hover:bg-[#00cc6a]"}`}>
-                  Upgrade
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Paper Trading */}
