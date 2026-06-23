@@ -227,8 +227,50 @@ export async function get24hrStatsBatchCG(
 // Returns Kline-compatible array using CoinGecko.
 // 4H/1D: uses ohlc endpoint (real high/low, needed for ADX).
 // 1H/30m: uses market_chart hourly (high/low estimated from adjacent closes).
+// 1W/1M: fetches daily closes and resamples into weekly/monthly candles (up to 5 years).
 export async function getKlinesCG(symbol: string, interval: string, limit: number): Promise<Kline[]> {
   const id = cgId(symbol);
+
+  if (interval === "1w" || interval === "1M") {
+    const days = interval === "1w" ? Math.min(limit * 7 + 14, 1825) : Math.min(limit * 31 + 31, 1825);
+    const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+      `${COINGECKO_BASE}/coins/${id}/market_chart`,
+      { params: { vs_currency: "usd", days } }
+    );
+
+    const groups = new Map<string, { timestamps: number[]; prices: number[]; volumes: number[] }>();
+    data.prices.forEach(([t, p], i) => {
+      const date = new Date(t);
+      let key: string;
+      if (interval === "1w") {
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay());
+        key = weekStart.toISOString().slice(0, 10);
+      } else {
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      }
+      if (!groups.has(key)) groups.set(key, { timestamps: [], prices: [], volumes: [] });
+      const g = groups.get(key)!;
+      g.timestamps.push(t);
+      g.prices.push(p);
+      g.volumes.push(data.total_volumes[i]?.[1] ?? 0);
+    });
+
+    const klines: Kline[] = [];
+    for (const [, g] of groups) {
+      if (g.prices.length === 0) continue;
+      klines.push({
+        openTime: g.timestamps[0],
+        open: g.prices[0],
+        high: Math.max(...g.prices),
+        low: Math.min(...g.prices),
+        close: g.prices[g.prices.length - 1],
+        volume: g.volumes.reduce((a, b) => a + b, 0),
+        closeTime: g.timestamps[g.timestamps.length - 1],
+      });
+    }
+    return klines.slice(-limit);
+  }
 
   if (interval === "4h" || interval === "12h") {
     const days = limit > 42 ? 14 : 7;

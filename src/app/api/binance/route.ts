@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
         return Response.json({ stats });
       }
       case "klines": {
-        const klines = await getKlinesCG(symbol, interval, 100);
+        const limitByInterval: Record<string, number> = { "1h": 100, "4h": 100, "1d": 100, "1w": 260, "1M": 60 };
+        const klineLimit = limitByInterval[interval] ?? 100;
+        const klines = await getKlinesCG(symbol, interval, klineLimit);
         return Response.json({ klines });
       }
       case "orderbook": {

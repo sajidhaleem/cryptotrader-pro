@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 const PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT", "XRPUSDT", "AVAXUSDT"];
-const INTERVALS = ["1h", "4h", "1d"];
+const INTERVALS = ["1h", "4h", "1d", "1w", "1M"];
 
 interface Kline {
   openTime: number;
@@ -99,8 +99,15 @@ function TradePageInner() {
     }
   }
 
+  const formatKlineTime = (openTime: number) => {
+    if (interval === "1M") return new Date(openTime).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    if (interval === "1w") return new Date(openTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+    if (interval === "1d") return new Date(openTime).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return new Date(openTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  };
+
   const chartData = klines.map((k) => ({
-    time: new Date(k.openTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+    time: formatKlineTime(k.openTime),
     close: k.close,
     high: k.high,
     low: k.low,
