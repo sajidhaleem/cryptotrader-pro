@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  ChevronRight, Brain, Shield
+  ChevronRight, Brain, Shield, Wallet
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/wallet",    label: "Wallet",      icon: Wallet },
   { href: "/advisor",   label: "AI Advisor", icon: Brain, badge: "AI" },
   { href: "/trade",     label: "Trade",       icon: Zap },
   { href: "/bots",      label: "Bots",        icon: Bot },
