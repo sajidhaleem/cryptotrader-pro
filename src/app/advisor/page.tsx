@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, TrendingUp, TrendingDown, CheckCircle, XCircle,
   RefreshCw, Clock, Zap, BarChart3, AlertTriangle, ChevronDown, ChevronUp,
-  Trophy, Target, Activity, Sparkles, BookOpen, ArrowUpRight, ArrowDownRight
+  Trophy, Target, Activity, Sparkles, BookOpen, ArrowUpRight, ArrowDownRight,
+  Star,
 } from "lucide-react";
+import { CRYPTO_ASSETS, COMMODITY_ASSETS, FOREX_ASSETS } from "@/lib/market-signals-types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Factor {
@@ -63,14 +65,20 @@ interface Performance {
 
 interface QuickScan {
   symbol: string;
+  label: string;
   price: number;
   signal: string;
   strength: number;
   trend: string;
   rsi: number;
+  category: "crypto" | "commodity" | "forex";
 }
 
-const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT"];
+type ScanFilter = "all" | "crypto" | "commodity" | "forex";
+
+const SCAN_CRYPTO    = CRYPTO_ASSETS.slice(0, 8);
+const SCAN_COMMODITY = COMMODITY_ASSETS.slice(0, 5);
+const SCAN_FOREX     = FOREX_ASSETS.slice(0, 5);
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 function ConfidenceBar({ confidence }: { confidence: number }) {
@@ -256,6 +264,21 @@ function ProposalCard({ proposal, onApprove, onDeny, loading }: {
   );
 }
 
+function CategoryBadge({ category }: { category: QuickScan["category"] }) {
+  const map = {
+    crypto:    { label: "Crypto",    color: "#7c3aed" },
+    commodity: { label: "Commodity", color: "#f59e0b" },
+    forex:     { label: "Forex",     color: "#3b82f6" },
+  };
+  const { label, color } = map[category];
+  return (
+    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
+      style={{ background: `${color}20`, color }}>
+      {label}
+    </span>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function AdvisorPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -268,6 +291,7 @@ export default function AdvisorPage() {
   const [scanLoading, setScanLoading] = useState(false);
   const [perf, setPerf] = useState<Performance | null>(null);
   const [perfLoading, setPerfLoading] = useState(true);
+  const [scanFilter, setScanFilter] = useState<ScanFilter>("all");
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -363,24 +387,75 @@ export default function AdvisorPage() {
   const loadMarketScan = useCallback(async () => {
     setScanLoading(true);
     const results: QuickScan[] = [];
-    for (const pair of PAIRS) {
+
+    const pushResult = (r: QuickScan) => {
+      results.push(r);
+      setScanResults([...results].sort((a, b) => b.strength - a.strength));
+    };
+
+    // Crypto — via /api/signals (CoinGecko, 4H interval)
+    for (const asset of SCAN_CRYPTO) {
       try {
-        const res = await fetch(`/api/signals?symbol=${pair}&interval=4h`);
+        const res = await fetch(`/api/signals?symbol=${asset.symbol}&interval=4h`);
         if (!res.ok) continue;
         const d = await res.json();
         if (d?.signal) {
-          results.push({
-            symbol: pair,
+          pushResult({
+            symbol: asset.symbol,
+            label: asset.label,
             price: d.price,
             signal: d.signal.signal,
             strength: d.signal.strength,
             trend: d.signal.trend,
             rsi: d.signal.rsi,
+            category: "crypto",
           });
-          setScanResults([...results].sort((a, b) => b.strength - a.strength));
         }
       } catch { /* skip */ }
     }
+
+    // Commodities — via /api/market-signals (Yahoo Finance, daily interval)
+    for (const asset of SCAN_COMMODITY) {
+      try {
+        const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=commodity&interval=1d`);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (d?.signal) {
+          pushResult({
+            symbol: asset.symbol,
+            label: asset.label,
+            price: d.price,
+            signal: d.signal.signal,
+            strength: d.signal.strength,
+            trend: d.signal.trend,
+            rsi: d.signal.rsi,
+            category: "commodity",
+          });
+        }
+      } catch { /* skip */ }
+    }
+
+    // Forex — via /api/market-signals (Yahoo Finance, daily interval)
+    for (const asset of SCAN_FOREX) {
+      try {
+        const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=forex&interval=1d`);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (d?.signal) {
+          pushResult({
+            symbol: asset.symbol,
+            label: asset.label,
+            price: d.price,
+            signal: d.signal.signal,
+            strength: d.signal.strength,
+            trend: d.signal.trend,
+            rsi: d.signal.rsi,
+            category: "forex",
+          });
+        }
+      } catch { /* skip */ }
+    }
+
     setScanLoading(false);
   }, []);
 
@@ -393,14 +468,26 @@ export default function AdvisorPage() {
 
   useEffect(() => { loadMarketScan(); }, [loadMarketScan]);
 
-  // Derive AI market briefing from scan results
+  // Derive verdicts across all asset classes
   const bullish = scanResults.filter(r => r.signal.includes("BUY")).length;
   const bearish = scanResults.filter(r => r.signal.includes("SELL")).length;
   const marketMood = scanResults.length === 0 ? null
     : bullish > bearish + 2 ? "bullish"
     : bearish > bullish + 2 ? "bearish"
     : "mixed";
-  const topOpportunity = scanResults[0];
+
+  const topBuy  = [...scanResults].filter(r => r.signal.includes("BUY")).sort((a, b) => b.strength - a.strength)[0];
+  const topSell = [...scanResults].filter(r => r.signal.includes("SELL")).sort((a, b) => b.strength - a.strength)[0];
+
+  const filteredResults = scanFilter === "all"
+    ? scanResults
+    : scanResults.filter(r => r.category === scanFilter);
+
+  const formatPrice = (r: QuickScan) => {
+    if (r.category === "crypto") return `$${r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    if (r.category === "commodity") return `$${r.price.toFixed(2)}`;
+    return r.price.toFixed(4);
+  };
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -434,7 +521,7 @@ export default function AdvisorPage() {
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
                 <span className="text-xs text-[#64748b]">
-                  {perf?.learningActive ? `Learning from ${perf.totalResolved} resolved trades` : "Learning from your trades"}
+                  Scanning Crypto · Commodities · Forex
                 </span>
               </div>
             </div>
@@ -450,6 +537,92 @@ export default function AdvisorPage() {
           </button>
         </div>
       </div>
+
+      {/* Final Verdict — top BUY and top SELL across all asset classes */}
+      {(topBuy || topSell) && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-[#7c3aed]/30 bg-[#7c3aed]/[0.04] overflow-hidden"
+        >
+          <div className="flex items-center gap-2 px-5 py-3 border-b border-[#7c3aed]/20">
+            <Star className="w-4 h-4 text-[#a78bfa]" />
+            <span className="text-sm font-bold text-white">Final Verdict — Best Opportunities Right Now</span>
+            <span className="text-xs text-[#64748b] ml-auto">{scanResults.length} assets scanned</span>
+          </div>
+          <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/5">
+            {/* Best BUY */}
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <ArrowUpRight className="w-4 h-4 text-[#00ff88]" />
+                <span className="text-xs font-bold text-[#00ff88] uppercase tracking-wider">Best Buy</span>
+              </div>
+              {topBuy ? (
+                <>
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-xl font-black text-white">{topBuy.label}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <CategoryBadge category={topBuy.category} />
+                        <span className="text-xs text-[#64748b]">{formatPrice(topBuy)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-[#00ff88]">{topBuy.strength}%</p>
+                      <p className="text-[10px] text-[#64748b]">signal strength</p>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
+                    <div className="h-full rounded-full bg-[#00ff88]" style={{ width: `${topBuy.strength}%` }} />
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[#64748b]">
+                    <span className="font-semibold text-[#00ff88]">{topBuy.signal.replace("_", " ")}</span>
+                    <span>RSI {topBuy.rsi.toFixed(0)}</span>
+                    <span>Trend {topBuy.trend}</span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-[#64748b]">No buy signals detected yet — scan in progress.</p>
+              )}
+            </div>
+
+            {/* Best SELL */}
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <ArrowDownRight className="w-4 h-4 text-red-400" />
+                <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Best Sell / Short</span>
+              </div>
+              {topSell ? (
+                <>
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-xl font-black text-white">{topSell.label}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <CategoryBadge category={topSell.category} />
+                        <span className="text-xs text-[#64748b]">{formatPrice(topSell)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-red-400">{topSell.strength}%</p>
+                      <p className="text-[10px] text-[#64748b]">signal strength</p>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
+                    <div className="h-full rounded-full bg-red-400" style={{ width: `${topSell.strength}%` }} />
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[#64748b]">
+                    <span className="font-semibold text-red-400">{topSell.signal.replace("_", " ")}</span>
+                    <span>RSI {topSell.rsi.toFixed(0)}</span>
+                    <span>Trend {topSell.trend}</span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-[#64748b]">No sell signals detected yet — scan in progress.</p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* AI Market Briefing */}
       {marketMood && (
@@ -470,16 +643,17 @@ export default function AdvisorPage() {
           <div>
             <p className="text-sm font-semibold text-white mb-0.5">
               {marketMood === "bullish"
-                ? `Market is leaning bullish — ${bullish}/${scanResults.length} pairs showing buy signals`
+                ? `Markets leaning bullish across Crypto, Commodities & Forex — ${bullish}/${scanResults.length} assets showing buy signals`
                 : marketMood === "bearish"
-                ? `Market is leaning bearish — ${bearish}/${scanResults.length} pairs showing sell signals`
-                : `Mixed market — ${bullish} bullish, ${bearish} bearish, ${scanResults.length - bullish - bearish} neutral`
+                ? `Markets leaning bearish across all classes — ${bearish}/${scanResults.length} assets showing sell signals`
+                : `Mixed signals — ${bullish} bullish, ${bearish} bearish across ${scanResults.length} assets`
               }
             </p>
-            {topOpportunity && (
+            {topBuy && (
               <p className="text-xs text-[#94a3b8]">
-                Strongest signal: <span className="font-semibold text-white">{topOpportunity.symbol.replace("USDT", "")}</span> —{" "}
-                {topOpportunity.signal.replace("_", " ")} at {topOpportunity.strength}% strength, RSI {topOpportunity.rsi.toFixed(0)}
+                Strongest buy: <span className="font-semibold text-white">{topBuy.label}</span> ({topBuy.category}) —{" "}
+                {topBuy.signal.replace("_", " ")} at {topBuy.strength}% strength
+                {topSell && <> · Strongest sell: <span className="font-semibold text-white">{topSell.label}</span> at {topSell.strength}%</>}
               </p>
             )}
           </div>
@@ -529,7 +703,7 @@ export default function AdvisorPage() {
         ))}
       </div>
 
-      {/* Best indicators (shown once there's data) */}
+      {/* Best indicators */}
       {perf?.signalAccuracy && perf.signalAccuracy.length > 0 && (
         <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -570,7 +744,7 @@ export default function AdvisorPage() {
           className="flex items-center gap-2 px-4 py-2 bg-[#7c3aed] text-white text-xs font-semibold rounded-xl hover:bg-[#6d28d9] transition-all disabled:opacity-60"
         >
           <Zap className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
-          {generating ? "Analysing 6 pairs..." : "Scan Now"}
+          {generating ? "Analysing..." : "Scan Now"}
         </button>
       </div>
 
@@ -586,7 +760,7 @@ export default function AdvisorPage() {
               <Brain className="w-10 h-10 text-[#1e2130] mb-3" />
               <p className="text-white font-semibold mb-1">No active proposals</p>
               <p className="text-[#64748b] text-sm max-w-xs">
-                No setup clears the 45%+ confidence bar right now. See the Market Overview below for live signals, or hit Scan Now to run a fresh analysis.
+                No setup clears the 45%+ confidence bar right now. See the Market Overview below for live BUY/SELL signals, or hit Scan Now to run a fresh analysis.
               </p>
             </motion.div>
           )}
@@ -602,12 +776,12 @@ export default function AdvisorPage() {
         </AnimatePresence>
       </div>
 
-      {/* Market Overview */}
+      {/* Market Overview — all 3 asset classes */}
       <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2130]">
           <div>
             <h3 className="font-semibold text-white text-sm">Market Overview</h3>
-            <p className="text-[#64748b] text-xs mt-0.5">Live 4H technical signals — ranked by strength</p>
+            <p className="text-[#64748b] text-xs mt-0.5">Live signals across Crypto, Commodities & Forex — ranked by strength</p>
           </div>
           <button
             onClick={loadMarketScan}
@@ -619,22 +793,42 @@ export default function AdvisorPage() {
           </button>
         </div>
 
+        {/* Filter tabs */}
+        <div className="flex gap-0 border-b border-[#1e2130]">
+          {(["all", "crypto", "commodity", "forex"] as ScanFilter[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => setScanFilter(f)}
+              className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${
+                scanFilter === f
+                  ? "text-white border-b-2 border-[#7c3aed]"
+                  : "text-[#64748b] hover:text-white"
+              }`}
+            >
+              {f === "all" ? `All (${scanResults.length})` : f === "crypto" ? `Crypto (${scanResults.filter(r => r.category === "crypto").length})` : f === "commodity" ? `Commodities (${scanResults.filter(r => r.category === "commodity").length})` : `Forex (${scanResults.filter(r => r.category === "forex").length})`}
+            </button>
+          ))}
+        </div>
+
         {scanLoading && scanResults.length === 0 ? (
-          <div className="py-8 text-center text-[#64748b] text-sm">Fetching live signals for all pairs...</div>
+          <div className="py-8 text-center text-[#64748b] text-sm">Scanning Crypto, Commodities & Forex…</div>
         ) : (
           <div className="divide-y divide-[#1e2130]">
-            {scanResults.map((r, idx) => {
+            {filteredResults.map((r, idx) => {
               const isBuy = r.signal.includes("BUY");
               const isSell = r.signal.includes("SELL");
               const sigColor = isBuy ? "#00ff88" : isSell ? "#ef4444" : "#f59e0b";
               return (
                 <div key={r.symbol} className="flex items-center gap-4 px-5 py-3 hover:bg-white/[0.02] transition-colors">
                   <div className="w-5 flex-shrink-0 text-xs text-[#475569] font-mono">{idx + 1}</div>
-                  <div className="w-24 flex-shrink-0">
-                    <p className="text-sm font-bold text-white">
-                      {r.symbol.replace("USDT", "")}<span className="text-[#475569] font-normal">/USDT</span>
-                    </p>
-                    <p className="text-xs text-[#64748b]">${r.price.toLocaleString()}</p>
+                  <div className="w-28 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <p className="text-sm font-bold text-white">{r.label}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CategoryBadge category={r.category} />
+                      <p className="text-xs text-[#64748b]">{formatPrice(r)}</p>
+                    </div>
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
@@ -656,8 +850,10 @@ export default function AdvisorPage() {
                 </div>
               );
             })}
-            {scanResults.length === 0 && !scanLoading && (
-              <div className="py-8 text-center text-[#64748b] text-sm">Click Refresh to load live signals</div>
+            {filteredResults.length === 0 && !scanLoading && (
+              <div className="py-8 text-center text-[#64748b] text-sm">
+                {scanResults.length === 0 ? "Click Refresh to load live signals" : `No ${scanFilter} results yet`}
+              </div>
             )}
           </div>
         )}
