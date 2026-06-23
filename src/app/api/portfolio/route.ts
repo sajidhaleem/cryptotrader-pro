@@ -7,14 +7,6 @@ export async function GET() {
   const userId = await getOwnerId();
   const encKey = process.env.ENCRYPTION_KEY ?? "";
 
-  // Paper portfolio
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const paperTrades = await prisma.paperTrade.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
-
   // Live portfolio (if API keys exist)
   let liveBalances = null;
   const apiKey = await prisma.binanceApiKey.findFirst({
@@ -47,21 +39,19 @@ export async function GET() {
 
   // Stats
   const totalTrades = await prisma.trade.count({ where: { userId } });
-  const paperTradeCount = await prisma.paperTrade.count({ where: { userId } });
+  const executedProposals = await prisma.tradeProposal.count({ where: { userId, status: "EXECUTED" } });
   const activeBots = await prisma.bot.count({
     where: { userId, status: "RUNNING" },
   });
 
   return Response.json({
-    paperBalance: user?.paperBalance ?? 10000,
-    paperTrades,
     hasApiKey,
     liveBalances,
     prices,
     priceChanges,
     stats: {
       totalTrades,
-      paperTradeCount,
+      executedProposals,
       activeBots,
     },
   });

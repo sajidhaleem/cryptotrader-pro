@@ -168,22 +168,6 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Paper Trading */}
-      <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-6">
-        <h2 className="font-semibold text-white mb-2">Paper Trading</h2>
-        <p className="text-sm text-[#64748b] mb-4">Reset your virtual balance back to $10,000 to start fresh.</p>
-        <button
-          onClick={async () => {
-            if (confirm("Reset paper balance to $10,000? All paper trades will be cleared.")) {
-              await fetch("/api/paper-trade/reset", { method: "POST" });
-              setMsg({ type: "success", text: "Paper balance reset to $10,000" });
-            }
-          }}
-          className="px-5 py-2.5 border border-[#ef4444]/30 text-red-400 rounded-xl text-sm hover:bg-red-400/5 transition-colors"
-        >
-          Reset Paper Balance
-        </button>
-      </div>
     </div>
   );
 }

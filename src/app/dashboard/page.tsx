@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, TrendingDown, Bot, Zap, BarChart3,
-  TestTube2, ArrowRight, RefreshCw
+  Brain, ArrowRight, RefreshCw
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -26,7 +26,6 @@ function StatCard({
       transition={{ delay, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       className="relative p-5 rounded-2xl border border-white/8 bg-white/[0.02] overflow-hidden group hover:border-white/15 transition-all"
     >
-      {/* Glow */}
       <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"
         style={{ background: `radial-gradient(circle, ${color}25, transparent 70%)` }} />
 
@@ -70,10 +69,9 @@ const PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"];
 
 export default function DashboardPage() {
   const [data, setData] = useState<{
-    paperBalance: number;
     prices: Record<string, number>;
     priceChanges: Record<string, number>;
-    stats: { totalTrades: number; paperTradeCount: number; activeBots: number };
+    stats: { totalTrades: number; executedProposals: number; activeBots: number };
     hasApiKey: boolean;
     liveBalances: null | unknown[];
   } | null>(null);
@@ -95,10 +93,6 @@ export default function DashboardPage() {
 
   useEffect(() => { load(); }, []);
 
-  const balance = data?.paperBalance ?? 10000;
-  const gain = balance - 10000;
-  const gainPositive = gain >= 0;
-
   return (
     <div className="p-6 space-y-6">
 
@@ -115,7 +109,7 @@ export default function DashboardPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
           <Link href="/trade" className="flex items-center gap-2 px-5 py-2.5 bg-[#00ff88] text-black font-bold rounded-xl hover:bg-[#00cc6a] transition-all hover:shadow-[0_0_20px_rgba(0,255,136,0.4)] text-sm">
-            <Zap className="w-4 h-4" /> New Trade
+            <Zap className="w-4 h-4" /> Live Trade
           </Link>
         </div>
       </div>
@@ -123,24 +117,25 @@ export default function DashboardPage() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="Paper Balance" icon={TestTube2} color="#00ff88" delay={0}
-          value={loading ? "—" : `$${balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          sub={loading ? "" : `${gainPositive ? "+" : ""}$${gain.toFixed(2)} all time`}
-          subPositive={gainPositive}
+          label="AI Proposals" icon={Brain} color="#7c3aed" delay={0}
+          value={loading ? "—" : String(data?.stats.executedProposals ?? 0)}
+          sub="approved & executed"
+          subPositive={(data?.stats.executedProposals ?? 0) > 0 ? true : undefined}
         />
         <StatCard
-          label="Paper Trades" icon={BarChart3} color="#06b6d4" delay={0.08}
-          value={loading ? "—" : String(data?.stats.paperTradeCount ?? 0)}
+          label="Live Trades" icon={BarChart3} color="#06b6d4" delay={0.08}
+          value={loading ? "—" : String(data?.stats.totalTrades ?? 0)}
           sub="total executed"
+          subPositive={(data?.stats.totalTrades ?? 0) > 0 ? true : undefined}
         />
         <StatCard
-          label="Active Bots" icon={Bot} color="#7c3aed" delay={0.16}
+          label="Active Bots" icon={Bot} color="#f59e0b" delay={0.16}
           value={loading ? "—" : String(data?.stats.activeBots ?? 0)}
           sub="running now"
           subPositive={(data?.stats.activeBots ?? 0) > 0 ? true : undefined}
         />
         <StatCard
-          label="Live Account" icon={Zap} color="#f59e0b" delay={0.24}
+          label="Live Account" icon={Zap} color="#00ff88" delay={0.24}
           value={
             loading ? "—"
             : data?.liveBalances ? "Connected"
@@ -158,7 +153,7 @@ export default function DashboardPage() {
 
       {/* Chart + Market */}
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* Portfolio chart */}
+        {/* Performance chart */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -167,11 +162,11 @@ export default function DashboardPage() {
         >
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="font-bold text-white">Portfolio Performance</h2>
-              <p className="text-xs text-[#64748b] mt-0.5">30-day simulation</p>
+              <h2 className="font-bold text-white">Performance Overview</h2>
+              <p className="text-xs text-[#64748b] mt-0.5">Visit AI Advisor for trade outcomes</p>
             </div>
             <Badge variant="outline" className="border-[#00ff88]/30 text-[#00ff88] bg-[#00ff88]/5 text-xs">
-              +{((chart[chart.length - 1].value - chart[0].value) / chart[0].value * 100).toFixed(1)}%
+              Live
             </Badge>
           </div>
           <ResponsiveContainer width="100%" height={220}>
@@ -222,10 +217,10 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { href: "/trade?mode=paper", label: "Paper Trade", icon: TestTube2, color: "#06b6d4", bg: "from-[#06b6d4]/10 to-[#06b6d4]/5 border-[#06b6d4]/20 hover:border-[#06b6d4]/40" },
-          { href: "/trade?mode=live",  label: "Live Trade",  icon: Zap,        color: "#00ff88", bg: "from-[#00ff88]/10 to-[#00ff88]/5 border-[#00ff88]/20 hover:border-[#00ff88]/40" },
-          { href: "/bots",             label: "Create Bot",  icon: Bot,        color: "#7c3aed", bg: "from-[#7c3aed]/10 to-[#7c3aed]/5 border-[#7c3aed]/20 hover:border-[#7c3aed]/40" },
-          { href: "/signals",          label: "AI Signals",  icon: BarChart3,  color: "#f59e0b", bg: "from-[#f59e0b]/10 to-[#f59e0b]/5 border-[#f59e0b]/20 hover:border-[#f59e0b]/40" },
+          { href: "/trade",    label: "Live Trade",  icon: Zap,      color: "#00ff88", bg: "from-[#00ff88]/10 to-[#00ff88]/5 border-[#00ff88]/20 hover:border-[#00ff88]/40" },
+          { href: "/advisor",  label: "AI Advisor",  icon: Brain,    color: "#7c3aed", bg: "from-[#7c3aed]/10 to-[#7c3aed]/5 border-[#7c3aed]/20 hover:border-[#7c3aed]/40" },
+          { href: "/bots",     label: "Create Bot",  icon: Bot,      color: "#f59e0b", bg: "from-[#f59e0b]/10 to-[#f59e0b]/5 border-[#f59e0b]/20 hover:border-[#f59e0b]/40" },
+          { href: "/signals",  label: "AI Signals",  icon: BarChart3, color: "#06b6d4", bg: "from-[#06b6d4]/10 to-[#06b6d4]/5 border-[#06b6d4]/20 hover:border-[#06b6d4]/40" },
         ].map((action, i) => (
           <motion.div key={action.href} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 + i * 0.07 }}>
             <Link
@@ -249,7 +244,7 @@ export default function DashboardPage() {
         >
           <div>
             <h3 className="font-bold text-white">Connect your Binance account</h3>
-            <p className="text-sm text-[#64748b] mt-1">Add your API keys to enable live trading and real portfolio tracking</p>
+            <p className="text-sm text-[#64748b] mt-1">Add your API keys to enable live trading and real-time order execution</p>
           </div>
           <Link
             href="/settings"

@@ -263,7 +263,7 @@ export default function AdvisorPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-  const [mode, setMode] = useState<"PAPER" | "LIVE">("PAPER");
+  const mode = "LIVE";
   const [scanResults, setScanResults] = useState<QuickScan[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
   const [perf, setPerf] = useState<Performance | null>(null);
@@ -441,16 +441,10 @@ export default function AdvisorPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setMode(mode === "PAPER" ? "LIVE" : "PAPER")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              mode === "PAPER"
-                ? "border-[#06b6d4]/30 text-[#06b6d4] bg-[#06b6d4]/5"
-                : "border-[#f59e0b]/30 text-[#f59e0b] bg-[#f59e0b]/5"
-            }`}
-          >
-            {mode}
-          </button>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#00ff88]/30 bg-[#00ff88]/5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
+            <span className="text-xs font-semibold text-[#00ff88]">LIVE</span>
+          </div>
           <button onClick={load} className="p-2 rounded-xl border border-white/8 text-[#64748b] hover:text-white transition-all">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>

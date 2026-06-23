@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   AreaChart,
   Area,
@@ -13,6 +14,7 @@ import {
 } from "recharts";
 
 const PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT", "XRPUSDT", "AVAXUSDT"];
+const INTERVALS = ["15m", "1h", "4h", "1d"];
 
 interface Kline {
   openTime: number;
@@ -23,14 +25,11 @@ interface Kline {
   volume: number;
 }
 
-const INTERVALS = ["15m", "1h", "4h", "1d"];
-
 function TradePageInner() {
   const searchParams = useSearchParams();
-  const defaultMode = searchParams.get("mode") === "live" ? "live" : "paper";
+  const defaultSymbol = searchParams.get("symbol") ?? "BTCUSDT";
 
-  const [mode, setMode] = useState<"paper" | "live">(defaultMode);
-  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [symbol, setSymbol] = useState(defaultSymbol);
   const [interval, setInterval] = useState("1h");
   const [klines, setKlines] = useState<Kline[]>([]);
   const [price, setPrice] = useState<number | null>(null);
@@ -38,7 +37,7 @@ function TradePageInner() {
   const [quantity, setQuantity] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [paperBalance, setPaperBalance] = useState<number | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
 
   const fetchChart = useCallback(async () => {
     try {
@@ -60,9 +59,10 @@ function TradePageInner() {
   }, [fetchChart]);
 
   useEffect(() => {
-    fetch("/api/paper-trade")
+    fetch("/api/portfolio")
       .then((r) => r.json())
-      .then((d) => setPaperBalance(d.portfolio?.cashBalance ?? null));
+      .then((d) => setHasApiKey(d.hasApiKey ?? false))
+      .catch(() => setHasApiKey(false));
   }, []);
 
   async function handleTrade() {
@@ -70,22 +70,32 @@ function TradePageInner() {
       setResult({ success: false, message: "Enter a valid quantity" });
       return;
     }
+    if (!hasApiKey) {
+      setResult({ success: false, message: "Add your Binance API key in Settings first" });
+      return;
+    }
 
     setLoading(true);
     setResult(null);
 
-    const res = await fetch("/api/paper-trade", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol, side, quantity: parseFloat(quantity) }),
-    });
+    try {
+      const res = await fetch("/api/binance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol, side, quantity: parseFloat(quantity) }),
+      });
+      const data = await res.json();
+      setLoading(false);
 
-    const data = await res.json();
-    setLoading(false);
-    setResult(data);
-
-    if (data.success && data.newBalance != null) {
-      setPaperBalance(data.newBalance);
+      if (data.success) {
+        setResult({ success: true, message: `Order placed — ID ${data.orderId} (${data.status})` });
+        setQuantity("");
+      } else {
+        setResult({ success: false, message: data.error ?? "Order failed" });
+      }
+    } catch {
+      setLoading(false);
+      setResult({ success: false, message: "Network error — order not placed" });
     }
   }
 
@@ -108,37 +118,27 @@ function TradePageInner() {
     <div className="p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Trading Terminal</h1>
-        <div className="flex rounded-xl overflow-hidden border border-[#1e2130]">
-          {(["paper", "live"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                mode === m
-                  ? m === "paper"
-                    ? "bg-[#06b6d4] text-black"
-                    : "bg-[#00ff88] text-black"
-                  : "bg-[#0f1117] text-[#64748b] hover:text-white"
-              }`}
-            >
-              {m === "paper" ? "🧪 Paper" : "⚡ Live"}
-            </button>
-          ))}
+        <div>
+          <h1 className="text-2xl font-bold text-white">Live Trading Terminal</h1>
+          <p className="text-[#64748b] text-sm mt-0.5">Market orders via Binance — real execution</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#00ff88]/30 bg-[#00ff88]/5">
+          <span className="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse" />
+          <span className="text-xs font-semibold text-[#00ff88]">LIVE</span>
         </div>
       </div>
 
-      {mode === "live" && (
-        <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-yellow-300">
-          ⚠️ Live trading requires Binance API keys. Go to{" "}
-          <a href="/settings" className="underline">Settings</a> to add them. Currently showing paper trade mode.
+      {/* API key warning */}
+      {hasApiKey === false && (
+        <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-yellow-300 flex items-center justify-between">
+          <span>⚠️ No Binance API key configured — add one to start trading.</span>
+          <Link href="/settings" className="ml-4 underline font-semibold flex-shrink-0">Go to Settings →</Link>
         </div>
       )}
 
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Chart area */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Symbol + interval selector */}
           <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-4">
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <div className="flex gap-2 flex-wrap">
@@ -215,14 +215,7 @@ function TradePageInner() {
 
         {/* Order Panel */}
         <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-5 space-y-4 h-fit">
-          <h2 className="font-semibold text-white">Place Order</h2>
-
-          {paperBalance !== null && mode === "paper" && (
-            <div className="p-3 rounded-xl bg-[#06b6d4]/10 border border-[#06b6d4]/20 text-xs">
-              <p className="text-[#06b6d4] font-medium">Paper Balance</p>
-              <p className="text-white font-bold text-lg">${paperBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-            </div>
-          )}
+          <h2 className="font-semibold text-white">Place Live Order</h2>
 
           {/* BUY / SELL tabs */}
           <div className="flex rounded-xl overflow-hidden border border-[#1e2130]">
@@ -252,7 +245,7 @@ function TradePageInner() {
           </div>
 
           <div>
-            <label className="text-xs text-[#64748b] mb-1 block">Quantity</label>
+            <label className="text-xs text-[#64748b] mb-1 block">Quantity (coin units)</label>
             <input
               type="number"
               value={quantity}
@@ -267,7 +260,7 @@ function TradePageInner() {
           {total > 0 && (
             <div className="p-3 rounded-xl bg-[#1a1f2e] text-xs space-y-1">
               <div className="flex justify-between text-[#64748b]">
-                <span>Price</span>
+                <span>Market Price</span>
                 <span className="text-white">${price?.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-[#64748b]">
@@ -275,7 +268,7 @@ function TradePageInner() {
                 <span className="text-white">${total.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-[#64748b]">
-                <span>Fee (0.1%)</span>
+                <span>Est. Fee (0.1%)</span>
                 <span className="text-white">${(total * 0.001).toFixed(2)}</span>
               </div>
             </div>
@@ -289,18 +282,18 @@ function TradePageInner() {
 
           <button
             onClick={handleTrade}
-            disabled={loading || !quantity}
+            disabled={loading || !quantity || hasApiKey === false}
             className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               side === "BUY"
                 ? "bg-[#22c55e] text-white hover:bg-[#16a34a]"
                 : "bg-[#ef4444] text-white hover:bg-[#dc2626]"
             }`}
           >
-            {loading ? "Executing..." : `${side} ${symbol.replace("USDT", "")} (${mode === "paper" ? "Paper" : "Live"})`}
+            {loading ? "Placing Order..." : hasApiKey === false ? "Add API Key First" : `${side} ${symbol.replace("USDT", "")} on Binance`}
           </button>
 
           <p className="text-xs text-center text-[#475569]">
-            {mode === "paper" ? "Risk-free simulation with live prices" : "Real order on Binance"}
+            Market order · Executed immediately on Binance
           </p>
         </div>
       </div>
