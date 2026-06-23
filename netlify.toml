@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "npm run build && mkdir -p .next/_next && cp -r .next/static .next/_next/static"
   publish = ".next"
 
 [build.environment]
