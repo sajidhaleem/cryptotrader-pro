@@ -245,6 +245,17 @@ function ProposalCard({ proposal, onApprove, onDeny, loading }: {
   );
 }
 
+interface QuickScan {
+  symbol: string;
+  price: number;
+  signal: string;
+  strength: number;
+  trend: string;
+  rsi: number;
+}
+
+const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT"];
+
 export default function AdvisorPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(false);
@@ -252,6 +263,8 @@ export default function AdvisorPage() {
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [mode, setMode] = useState<"PAPER" | "LIVE">("PAPER");
+  const [scanResults, setScanResults] = useState<QuickScan[]>([]);
+  const [scanLoading, setScanLoading] = useState(false);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -333,12 +346,40 @@ export default function AdvisorPage() {
     }
   };
 
+  const loadMarketScan = useCallback(async () => {
+    setScanLoading(true);
+    const results: QuickScan[] = [];
+    for (const pair of PAIRS) {
+      try {
+        const res = await fetch(`/api/signals?symbol=${pair}&interval=4h`);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (d?.signal) {
+          results.push({
+            symbol: pair,
+            price: d.price,
+            signal: d.signal.signal,
+            strength: d.signal.strength,
+            trend: d.signal.trend,
+            rsi: d.signal.rsi,
+          });
+          setScanResults([...results].sort((a, b) => b.strength - a.strength));
+        }
+      } catch { /* skip */ }
+    }
+    setScanLoading(false);
+  }, []);
+
   useEffect(() => {
     load();
-    // Auto-refresh proposals every 5 minutes
     const id = setInterval(load, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [load]);
+
+  // Auto-load market scan so there's always something to see
+  useEffect(() => {
+    loadMarketScan();
+  }, [loadMarketScan]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -435,12 +476,12 @@ export default function AdvisorPage() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center py-16 text-center"
+              className="flex flex-col items-center justify-center py-8 text-center"
             >
-              <Brain className="w-12 h-12 text-[#1e2130] mb-4" />
+              <Brain className="w-10 h-10 text-[#1e2130] mb-3" />
               <p className="text-white font-semibold mb-1">No active proposals</p>
               <p className="text-[#64748b] text-sm max-w-xs">
-                The AI is monitoring 8 pairs continuously. Click "Scan Now" to trigger an immediate analysis, or wait for the next 30-minute cycle.
+                No setup meets the 45%+ confidence threshold right now. Click "Scan Now" to run a fresh analysis.
               </p>
             </motion.div>
           )}
@@ -455,6 +496,57 @@ export default function AdvisorPage() {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Market Overview — always visible so there's always something to see */}
+      {scanResults.length > 0 && (
+        <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2130]">
+            <div>
+              <h3 className="font-semibold text-white text-sm">Market Overview</h3>
+              <p className="text-[#64748b] text-xs mt-0.5">Live 4H technical signals across all pairs</p>
+            </div>
+            <button
+              onClick={loadMarketScan}
+              disabled={scanLoading}
+              className="flex items-center gap-1.5 text-xs text-[#64748b] hover:text-white transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${scanLoading ? "animate-spin" : ""}`} />
+              {scanLoading ? "Scanning..." : "Refresh"}
+            </button>
+          </div>
+          <div className="divide-y divide-[#1e2130]">
+            {scanResults.map((r) => {
+              const isBuy = r.signal.includes("BUY");
+              const isSell = r.signal.includes("SELL");
+              const sigColor = isBuy ? "#00ff88" : isSell ? "#ef4444" : "#f59e0b";
+              const barColor = isBuy ? "#00ff88" : isSell ? "#ef4444" : "#f59e0b";
+              return (
+                <div key={r.symbol} className="flex items-center gap-4 px-5 py-3">
+                  <div className="w-24 flex-shrink-0">
+                    <p className="text-sm font-bold text-white">{r.symbol.replace("USDT", "")}<span className="text-[#475569] font-normal">/USDT</span></p>
+                    <p className="text-xs text-[#64748b]">${r.price.toLocaleString()}</p>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold" style={{ color: sigColor }}>{r.signal.replace("_", " ")}</span>
+                      <span className="text-xs text-[#64748b]">RSI {r.rsi.toFixed(0)} · {r.trend}</span>
+                    </div>
+                    <div className="h-1.5 bg-[#1e2130] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${r.strength}%`, background: barColor }} />
+                    </div>
+                  </div>
+                  <div className="w-10 text-right flex-shrink-0">
+                    <span className="text-xs font-semibold text-white">{r.strength}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {scanLoading && scanResults.length === 0 && (
+            <div className="py-8 text-center text-[#64748b] text-sm">Scanning all pairs...</div>
+          )}
+        </div>
+      )}
 
     </div>
   );

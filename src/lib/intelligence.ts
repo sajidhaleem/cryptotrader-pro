@@ -440,12 +440,12 @@ export async function analyzeSymbol(symbol: string, userId?: string): Promise<In
   else if (!partialAlignment) finalScore = Math.round(finalScore * 0.70);
   finalScore = Math.max(-100, Math.min(100, finalScore));
 
-  // ADX confidence modifier
+  // ADX confidence modifier — softened so ranging markets still surface signals
   let confidence = Math.min(100, Math.round(Math.abs(finalScore)));
-  if      (adxValue < 15) confidence = Math.round(confidence * 0.35);
-  else if (adxValue < 20) confidence = Math.round(confidence * 0.60);
-  else if (adxValue < 25) confidence = Math.round(confidence * 0.80);
-  else if (adxValue > 35) confidence = Math.min(100, Math.round(confidence * 1.15));
+  if      (adxValue < 15) confidence = Math.round(confidence * 0.55);
+  else if (adxValue < 20) confidence = Math.round(confidence * 0.75);
+  else if (adxValue < 25) confidence = Math.round(confidence * 0.90);
+  else if (adxValue > 35) confidence = Math.min(100, Math.round(confidence * 1.20));
 
   let recommendation: IntelligenceReport["recommendation"] = "HOLD";
   let side: "BUY" | "SELL" | null = null;

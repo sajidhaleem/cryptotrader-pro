@@ -9,7 +9,7 @@ import { decrypt } from "./utils";
 const WATCHLIST = [
   "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT",
 ];
-const MIN_CONFIDENCE = 60; // multi-timeframe engine — higher bar for quality
+const MIN_CONFIDENCE = 45; // lowered from 60 — ADX softened so 45 still filters noise
 const PROPOSAL_TTL_HOURS = 6; // 6h expiry — 1h/4h signals stay valid longer
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 

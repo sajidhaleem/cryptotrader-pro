@@ -50,8 +50,9 @@ export default function SignalsPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/signals?symbol=${pair}&interval=${iv}`);
+      if (!res.ok) return;
       const d = await res.json();
-      setData(d);
+      if (d?.signal) setData(d);
     } finally {
       setLoading(false);
     }
@@ -61,17 +62,15 @@ export default function SignalsPage() {
 
   async function loadAllSignals() {
     setLoadingAll(true);
-    const results: Record<string, SignalData> = {};
-    await Promise.all(
-      PAIRS.map(async (pair) => {
-        try {
-          const res = await fetch(`/api/signals?symbol=${pair}&interval=4h`);
-          const d = await res.json();
-          results[pair] = d;
-        } catch { /* skip */ }
-      })
-    );
-    setMultiSignals(results);
+    // Sequential to respect CoinGecko 30 req/min — each call internally makes 3 CG requests
+    for (const pair of PAIRS) {
+      try {
+        const res = await fetch(`/api/signals?symbol=${pair}&interval=4h`);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (d?.signal) setMultiSignals((prev) => ({ ...prev, [pair]: d }));
+      } catch { /* skip */ }
+    }
     setLoadingAll(false);
   }
 
@@ -96,7 +95,7 @@ export default function SignalsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {PAIRS.map((pair) => {
           const s = multiSignals[pair];
-          const sig = s?.signal.signal ?? "—";
+          const sig = s?.signal?.signal ?? "—";
           const c = SIGNAL_COLORS[sig] ?? { text: "text-[#64748b]", bg: "bg-[#1a1f2e]", border: "border-[#1e2130]" };
           return (
             <button
@@ -107,7 +106,7 @@ export default function SignalsPage() {
               }`}
             >
               <p className="font-bold text-white text-sm">{pair.replace("USDT", "")}<span className="text-[#475569]">/USDT</span></p>
-              {s ? (
+              {s?.signal ? (
                 <>
                   <p className={`text-xs font-bold mt-1 ${c.text}`}>{sig.replace("_", " ")}</p>
                   <div className="mt-2 h-1 bg-[#1e2130] rounded-full">

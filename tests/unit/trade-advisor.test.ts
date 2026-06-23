@@ -119,10 +119,10 @@ describe("generateProposals", () => {
     expect(mockPrisma.tradeProposal.create).toHaveBeenCalledOnce();
   });
 
-  it("skips proposals below MIN_CONFIDENCE (60)", async () => {
+  it("skips proposals below MIN_CONFIDENCE (45)", async () => {
     mockAnalyze.mockResolvedValueOnce({
       ...makeBullishReport("BTCUSDT"),
-      confidence: 45, // below threshold
+      confidence: 30, // below 45 threshold
     });
 
     const genPromise = generateProposals("u1");
