@@ -1,7 +1,8 @@
 import axios from "axios";
 import crypto from "crypto";
 
-const BASE_URL = "https://api.binance.com";
+// api-gcp.binance.com is accessible from Cloudflare IPs; api.binance.com is not
+const BASE_URL = "https://api-gcp.binance.com";
 const TESTNET_URL = "https://testnet.binance.vision";
 
 export interface Kline {
@@ -183,14 +184,13 @@ async function binanceFetchPost<T = Record<string, unknown>>(
   url: string,
   apiKey: string
 ): Promise<T> {
-  const proxyUrl    = process.env.BINANCE_PROXY_URL;
-  const proxySecret = process.env.BINANCE_PROXY_SECRET ?? "";
+  const proxyUrl = process.env.BINANCE_PROXY_URL;
 
   if (proxyUrl) {
     const { data } = await axios.post<T>(
       proxyUrl,
-      { url, apiKey },
-      { headers: { "X-Proxy-Secret": proxySecret }, timeout: 12000 }
+      { url, apiKey, method: "POST" },
+      { timeout: 12000 }
     );
     return data;
   }

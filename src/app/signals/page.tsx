@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { CRYPTO_ASSETS, COMMODITY_ASSETS, FOREX_ASSETS, type AssetCategory } from "@/app/api/market-signals/route";
+import { CRYPTO_ASSETS, COMMODITY_ASSETS, FOREX_ASSETS, type AssetCategory } from "@/lib/market-signals-types";
 
 interface SignalData {
   symbol: string;

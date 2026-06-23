@@ -52,7 +52,9 @@ export default {
       return new Response("Forbidden: URL not in allowlist", { status: 403, headers: CORS_HEADERS });
     }
 
+    const method = (body.method === "POST") ? "POST" : "GET";
     const response = await fetch(url, {
+      method,
       headers: { "X-MBX-APIKEY": apiKey },
     });
 
