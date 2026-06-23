@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const { action, proposalId, mode } = await req.json();
 
   if (action === "generate") {
-    const results = await generateProposals(userId, mode ?? "PAPER");
+    const results = await generateProposals(userId, mode ?? "LIVE");
     return Response.json({ generated: results.length, proposals: results.map((r) => r.proposal) });
   }
 
