@@ -74,6 +74,7 @@ export default function DashboardPage() {
     prices: Record<string, number>;
     priceChanges: Record<string, number>;
     stats: { totalTrades: number; paperTradeCount: number; activeBots: number };
+    hasApiKey: boolean;
     liveBalances: null | unknown[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,9 +141,18 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Live Account" icon={Zap} color="#f59e0b" delay={0.24}
-          value={data?.liveBalances ? "Connected" : "Not linked"}
-          sub={data?.liveBalances ? `${(data.liveBalances as unknown[]).length} assets` : "Add Binance keys"}
-          subPositive={data?.liveBalances ? true : undefined}
+          value={
+            loading ? "—"
+            : data?.liveBalances ? "Connected"
+            : data?.hasApiKey ? "Key Saved"
+            : "Not linked"
+          }
+          sub={
+            data?.liveBalances ? `${(data.liveBalances as unknown[]).length} assets`
+            : data?.hasApiKey ? "Balance via Binance app"
+            : "Add API keys in Settings"
+          }
+          subPositive={data?.hasApiKey ? true : undefined}
         />
       </div>
 
@@ -230,7 +240,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Connect Binance CTA */}
-      {!data?.liveBalances && !loading && (
+      {!data?.hasApiKey && !loading && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

@@ -20,6 +20,7 @@ export async function GET() {
   const apiKey = await prisma.binanceApiKey.findFirst({
     where: { userId, isActive: true },
   });
+  const hasApiKey = !!apiKey;
 
   if (apiKey) {
     try {
@@ -31,7 +32,7 @@ export async function GET() {
         apiKey.isTestnet
       );
     } catch {
-      // silently fail if API key is invalid
+      // Balance fetch failed (likely geo-restricted from deployment server) but key IS saved
     }
   }
 
@@ -54,6 +55,7 @@ export async function GET() {
   return Response.json({
     paperBalance: user?.paperBalance ?? 10000,
     paperTrades,
+    hasApiKey,
     liveBalances,
     prices,
     priceChanges,

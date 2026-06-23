@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
 import { getOwnerId } from "@/lib/db";
 import { approveProposal, denyProposal, generateProposals, getPendingProposals } from "@/lib/trade-advisor";
+import { checkAndUpdateOutcomes } from "@/lib/outcome-tracker";
 
 export async function GET() {
   const userId = await getOwnerId();
+  // Run outcome tracker in background — don't await, keep response fast
+  checkAndUpdateOutcomes(userId).catch(() => null);
   const proposals = await getPendingProposals(userId);
   return Response.json({ proposals });
 }
