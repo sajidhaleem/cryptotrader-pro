@@ -95,7 +95,8 @@ export async function GET(req: Request) {
   try {
     const decryptedKey    = decrypt(apiKey.apiKey, encKey);
     const decryptedSecret = decrypt(apiKey.secretKey, encKey);
-    const base   = apiKey.isTestnet ? "https://testnet.binance.vision" : "https://api.binance.com";
+    // api-gcp.binance.com is not blocked from Cloudflare IPs (unlike api.binance.com)
+    const base   = apiKey.isTestnet ? "https://testnet.binance.vision" : "https://api-gcp.binance.com";
     const params = { timestamp: Date.now(), recvWindow: 10000 };
     const query  = signQuery(params, decryptedSecret);
 

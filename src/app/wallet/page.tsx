@@ -207,43 +207,26 @@ export default function WalletPage() {
         return;
       }
 
-      // Step 2: browser calls Binance directly (CORS: Access-Control-Allow-Origin: *)
-      // Direct calls bypass the datacenter geo-block; only cloud/datacenter IPs are restricted.
-      // CF Worker is used as a fallback if the direct call fails.
+      // Step 2: call Binance via CF Worker proxy.
+      // Signed URL uses api-gcp.binance.com which is accessible from Cloudflare IPs.
+      // Direct browser calls are blocked by CORS (Binance doesn't allow X-MBX-APIKEY header cross-origin).
       let rawBalances: { asset: string; free: string; locked: string }[];
       try {
-        let binData: { balances?: { asset: string; free: string; locked: string }[]; code?: number; msg?: string } | null = null;
-
-        // Try direct Binance call first (works from residential/mobile IPs worldwide)
-        try {
-          const directRes = await fetch(signData.signedUrl, {
-            headers: { "X-MBX-APIKEY": signData.binanceKey ?? "" },
-          });
-          const text = await directRes.text();
-          if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
-            binData = JSON.parse(text);
-          }
-        } catch { /* fall through to CF Worker */ }
-
-        // Fallback: CF Worker proxy (for VPN users or edge cases)
-        if (!binData) {
-          const proxyUrl = signData.proxyUrl || "https://binance-proxy.sajidhaleem.workers.dev";
-          const proxyRes = await fetch(proxyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: signData.signedUrl, apiKey: signData.binanceKey }),
-          });
-          const proxyText = await proxyRes.text();
-          if (!proxyText.trim().startsWith("{") && !proxyText.trim().startsWith("[")) {
-            throw new Error("Binance API is unavailable from your network. Please check your connection or VPN.");
-          }
-          binData = JSON.parse(proxyText);
+        const proxyUrl = signData.proxyUrl || "https://binance-proxy.sajidhaleem.workers.dev";
+        const proxyRes = await fetch(proxyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: signData.signedUrl, apiKey: signData.binanceKey }),
+        });
+        const proxyText = await proxyRes.text();
+        if (!proxyText.trim().startsWith("{") && !proxyText.trim().startsWith("[")) {
+          throw new Error(`Binance API returned an unexpected response. Status: ${proxyRes.status}`);
         }
-
-        if (binData!.code !== undefined && binData!.code !== 200) {
-          throw new Error(`Binance error ${binData!.code}: ${binData!.msg}`);
+        const binData = JSON.parse(proxyText) as { balances?: { asset: string; free: string; locked: string }[]; code?: number; msg?: string };
+        if (binData.code !== undefined && binData.code !== 200) {
+          throw new Error(`Binance error ${binData.code}: ${binData.msg}`);
         }
-        rawBalances = (binData!.balances ?? []).filter(
+        rawBalances = (binData.balances ?? []).filter(
           (b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
         );
       } catch (err) {
