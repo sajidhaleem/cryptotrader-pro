@@ -164,10 +164,11 @@ function describeMarket(snap: MarketSnapshot): string {
 }
 
 export async function getBotRecommendation(symbol: string): Promise<BotRecommendation> {
-  const snap = await buildMarketSnapshot(symbol);
-
+  // Fail fast — check key before burning CoinGecko rate limit quota
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to Netlify environment variables");
+
+  const snap = await buildMarketSnapshot(symbol);
 
   const client = new Anthropic({ apiKey });
 

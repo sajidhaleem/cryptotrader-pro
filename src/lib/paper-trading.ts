@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { getPrice } from "./binance";
+import { getPriceCG } from "./market-data";
 
 export interface PaperTradeResult {
   success: boolean;
@@ -20,7 +20,7 @@ export async function executePaperTrade(
   side: "BUY" | "SELL",
   quantity: number
 ): Promise<PaperTradeResult> {
-  const price = await getPrice(symbol);
+  const price = await getPriceCG(symbol);
   const total = price * quantity;
   const fee = total * 0.001; // 0.1% fee
 
