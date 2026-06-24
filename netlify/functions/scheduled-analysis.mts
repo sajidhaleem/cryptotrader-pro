@@ -6,7 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { generateProposals } from "../../src/lib/trade-advisor";
 import { runAllBots } from "../../src/lib/bots";
 import { recordOutcome } from "../../src/lib/intelligence";
-import { getPrice } from "../../src/lib/binance";
+import { getPriceCG } from "../../src/lib/market-data";
 
 export default async function handler() {
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -60,7 +60,7 @@ export default async function handler() {
         for (const proposal of open) {
           positionsChecked++;
           try {
-            const price  = await getPrice(proposal.symbol);
+            const price  = await getPriceCG(proposal.symbol);
             const isBuy  = proposal.side === "BUY";
             const hitStop   = isBuy ? price <= proposal.stopLoss  : price >= proposal.stopLoss;
             const hitTarget = isBuy ? price >= proposal.takeProfit : price <= proposal.takeProfit;

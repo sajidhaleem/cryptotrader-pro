@@ -90,6 +90,113 @@ function formatLevel(price: number, category: AssetCategory) {
   return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+interface BotRunResult { botId: string; name: string; result: string; }
+
+function BotDiagnostics() {
+  const [running, setRunning]   = useState(false);
+  const [results, setResults]   = useState<BotRunResult[] | null>(null);
+  const [ranAt,   setRanAt]     = useState<string | null>(null);
+  const [error,   setError]     = useState<string | null>(null);
+
+  async function runNow() {
+    setRunning(true);
+    setResults(null);
+    setError(null);
+    try {
+      const res  = await fetch("/api/bots/run", { method: "POST" });
+      const data = await res.json() as { results: BotRunResult[]; ranAt: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Run failed");
+      setResults(data.results);
+      setRanAt(data.ranAt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function resultColor(msg: string) {
+    if (msg.includes("BUY") || msg.includes("Paper BUY") || msg.includes("Live BUY")) return "#00ff88";
+    if (msg.includes("Error") || msg.includes("failed") || msg.includes("invalid")) return "#ef4444";
+    if (msg.includes("not due") || msg.includes("outside range") || msg.includes("not near")) return "#f59e0b";
+    return "#94a3b8";
+  }
+
+  function resultIcon(msg: string) {
+    if (msg.includes("BUY"))    return "✅";
+    if (msg.includes("Error") || msg.includes("invalid")) return "❌";
+    if (msg.includes("not due") || msg.includes("outside") || msg.includes("not near")) return "⏳";
+    return "ℹ️";
+  }
+
+  return (
+    <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4">
+        <div>
+          <p className="text-sm font-semibold text-white">Bot Engine Status</p>
+          <p className="text-xs text-[#64748b] mt-0.5">
+            Auto-runs every 30 min via Netlify scheduler · {ranAt ? `Last run: ${new Date(ranAt).toLocaleTimeString()}` : "Not run this session"}
+          </p>
+        </div>
+        <button
+          onClick={() => void runNow()}
+          disabled={running}
+          className="flex items-center gap-2 px-4 py-2 bg-[#1e2130] border border-[#2d3548] hover:border-[#00ff88]/40 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+        >
+          {running ? (
+            <><span className="inline-block w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Running...</>
+          ) : (
+            <>▶ Run Bots Now</>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <div className="px-5 pb-4 text-xs text-red-400 bg-red-400/5 border-t border-red-400/20 py-3">
+          ❌ {error}
+        </div>
+      )}
+
+      {results && (
+        <div className="border-t border-[#1e2130]">
+          {results.length === 0 ? (
+            <p className="px-5 py-4 text-xs text-[#64748b]">No RUNNING bots found</p>
+          ) : (
+            <div className="divide-y divide-[#1e2130]">
+              {results.map((r) => (
+                <div key={r.botId} className="px-5 py-3 flex items-start gap-3">
+                  <span className="text-sm flex-shrink-0 mt-0.5">{resultIcon(r.result)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-white">{r.name}</p>
+                    <p className="text-xs mt-0.5 leading-relaxed" style={{ color: resultColor(r.result) }}>
+                      {r.result}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="px-5 py-3 border-t border-[#1e2130] bg-[#0a0d14]">
+            <p className="text-[10px] text-[#475569]">
+              ⏳ = Conditions not met yet (waiting for interval / price range) &nbsp;·&nbsp;
+              ✅ = Trade executed &nbsp;·&nbsp;
+              ❌ = Error — check bot config
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!results && !running && !error && (
+        <div className="px-5 pb-4 border-t border-[#1e2130] pt-3">
+          <p className="text-xs text-[#475569]">
+            Click <span className="text-white font-medium">Run Bots Now</span> to see exactly what each bot is doing — whether it traded, why it skipped, or if there&apos;s an error in its config.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExampleScenarios() {
   const [open, setOpen] = useState(false);
 
@@ -763,6 +870,9 @@ export default function BotsPage() {
           )}
         </div>
       )}
+
+      {/* ── Bot Diagnostics — Run Now ────────────────────────────────────── */}
+      {bots.length > 0 && <BotDiagnostics />}
 
       {/* ── Active Bots List ─────────────────────────────────────────────── */}
       {loading ? (
