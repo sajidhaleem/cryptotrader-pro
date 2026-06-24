@@ -1,48 +1,61 @@
-// Claude-powered bot strategy advisor
-// Market data via CoinGecko (Binance public endpoints return 451 from US-hosted servers)
-// Trading execution still uses Binance via user's own API keys
+// Claude-powered bot & investment advisor
+// Technical data: CoinGecko (crypto) | Yahoo Finance (commodity/forex)
+// News context: Yahoo Finance RSS, Reuters, MarketWatch, CoinDesk
 import Anthropic from "@anthropic-ai/sdk";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
 import axios from "axios";
 import { COINGECKO_IDS } from "./market-data";
+import { fetchNewsContext, type NewsContext } from "./news-feed";
+
+export type AssetCategory = "crypto" | "commodity" | "forex";
 
 export interface BotRecommendation {
-  strategy: "DCA" | "RSI" | "MACD" | "GRID";
-  name: string;
-  symbol: string;
-  config: Record<string, unknown>;
-  rationale: string;
+  strategy:    "DCA" | "RSI" | "MACD" | "GRID";
+  name:        string;
+  symbol:      string;
+  category:    AssetCategory;
+  config:      Record<string, unknown>;
+  rationale:   string;
+  // Investment levels — AI-estimated based on current price + ATR
+  entryPrice:  number;
+  stopLoss:    number;
+  takeProfit:  number;
+  riskReward:  number;
+  action:      "BUY" | "SELL" | "HOLD";
+  actionReason: string;
   marketPhase: "RANGING" | "TRENDING_UP" | "TRENDING_DOWN" | "VOLATILE" | "ACCUMULATION";
-  confidence: number;
+  confidence:  number;
   safetyNotes: string[];
   rawMarketData: MarketSnapshot;
+  newsContext: NewsContext;
+  executionMode: "AUTO" | "ADVISORY"; // AUTO = Binance bot; ADVISORY = manual broker
 }
 
 export interface MarketSnapshot {
-  price: number;
-  adx: number;
-  rsi1h: number;
-  rsi4h: number;
-  bbWidth: number;
-  bbPosition: number;
-  macdHistogram: number;
-  macdBullish: boolean;
-  volumeRatio: number;
-  change24h: number;
+  price:          number;
+  adx:            number;
+  rsi1h:          number;  // for crypto; daily RSI for commodity/forex
+  rsi4h:          number;
+  bbWidth:        number;
+  bbPosition:     number;
+  macdHistogram:  number;
+  macdBullish:    boolean;
+  volumeRatio:    number;
+  change24h:      number;
+  dataInterval:   "hourly" | "daily";
 }
 
-const CG = "https://api.coingecko.com/api/v3";
-const cgSleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const CG    = "https://api.coingecko.com/api/v3";
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function cgGet<T>(url: string, params: Record<string, unknown>): Promise<T> {
-  // Retry once on 429 — wait 10s then try again.
   try {
     const { data } = await axios.get<T>(url, { params });
     return data;
   } catch (err: unknown) {
     const status = (err as { response?: { status?: number } })?.response?.status;
     if (status === 429) {
-      await cgSleep(10_000);
+      await sleep(10_000);
       const { data } = await axios.get<T>(url, { params });
       return data;
     }
@@ -50,23 +63,21 @@ async function cgGet<T>(url: string, params: Record<string, unknown>): Promise<T
   }
 }
 
-async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
+// ── Crypto snapshot via CoinGecko ─────────────────────────────────────────────
+async function buildCryptoSnapshot(symbol: string): Promise<MarketSnapshot> {
   const coinId = COINGECKO_IDS[symbol];
-  if (!coinId) throw new Error(`Unsupported symbol: ${symbol}. Supported: ${Object.keys(COINGECKO_IDS).join(", ")}`);
+  if (!coinId) throw new Error(`Unsupported crypto symbol: ${symbol}`);
 
-  // Sequential calls with delays — CoinGecko free tier is 30 req/min (1 per 2s).
-  // Parallel calls work in isolation but fail when the dashboard or signals page
-  // has recently consumed the budget. Sequential + delay keeps us under the limit.
   const chart1h = await cgGet<{ prices: [number, number][]; total_volumes: [number, number][] }>(
     `${CG}/coins/${coinId}/market_chart`,
     { vs_currency: "usd", days: 5, interval: "hourly" }
   );
-  await cgSleep(400);
+  await sleep(400);
   const ohlc4h = await cgGet<[number, number, number, number, number][]>(
     `${CG}/coins/${coinId}/ohlc`,
     { vs_currency: "usd", days: 7 }
   );
-  await cgSleep(400);
+  await sleep(400);
   const priceData = await cgGet<Record<string, { usd: number; usd_24h_change: number }>>(
     `${CG}/simple/price`,
     { ids: coinId, vs_currencies: "usd", include_24hr_change: true }
@@ -74,181 +85,263 @@ async function buildMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
 
   const closes1h  = chart1h.prices.map(([, p]) => p);
   const volumes1h = chart1h.total_volumes.map(([, v]) => v);
-
-  const closes4h = ohlc4h.map(c => c[4]);
-  const highs4h  = ohlc4h.map(c => c[2]);
-  const lows4h   = ohlc4h.map(c => c[3]);
+  const closes4h  = ohlc4h.map(c => c[4]);
+  const highs4h   = ohlc4h.map(c => c[2]);
+  const lows4h    = ohlc4h.map(c => c[3]);
 
   const coinInfo = priceData[coinId];
-  if (!coinInfo) throw new Error(`CoinGecko returned no data for ${symbol} — may be rate-limited, try again in a moment`);
+  if (!coinInfo) throw new Error(`CoinGecko returned no data for ${symbol}`);
   const currentPrice = coinInfo.usd;
   const change24h    = coinInfo.usd_24h_change;
 
-  // RSI — 1H and 4H
-  const rsiArr1h = RSI.calculate({ period: 14, values: closes1h });
-  const rsiArr4h = RSI.calculate({ period: 14, values: closes4h });
-  const rsi1h = rsiArr1h[rsiArr1h.length - 1] ?? 50;
-  const rsi4h = rsiArr4h[rsiArr4h.length - 1] ?? 50;
+  const rsi1h = (RSI.calculate({ period: 14, values: closes1h }) ?? []).slice(-1)[0] ?? 50;
+  const rsi4h = (RSI.calculate({ period: 14, values: closes4h }) ?? []).slice(-1)[0] ?? 50;
 
-  // Bollinger Bands width + position (1H)
-  const bbArr = BollingerBands.calculate({ period: 20, values: closes1h, stdDev: 2 });
-  const bb = bbArr[bbArr.length - 1];
+  const bbArr      = BollingerBands.calculate({ period: 20, values: closes1h, stdDev: 2 });
+  const bb         = bbArr[bbArr.length - 1];
   const bbWidth    = bb ? (bb.upper - bb.lower) / bb.middle : 0.02;
-  const bbPosition = bb && bb.upper !== bb.lower
-    ? (currentPrice - bb.lower) / (bb.upper - bb.lower)
-    : 0.5;
+  const bbPosition = bb && bb.upper !== bb.lower ? (currentPrice - bb.lower) / (bb.upper - bb.lower) : 0.5;
 
-  // MACD histogram direction (4H)
-  const macdArr = MACD.calculate({
-    values: closes4h, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9,
-    SimpleMAOscillator: false, SimpleMASignal: false,
-  });
-  const macdLast     = macdArr[macdArr.length - 1];
-  const macdPrev     = macdArr[macdArr.length - 2];
+  const macdArr     = MACD.calculate({ values: closes4h, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false });
+  const macdLast    = macdArr[macdArr.length - 1];
+  const macdPrev    = macdArr[macdArr.length - 2];
   const macdHistogram = macdLast?.histogram ?? 0;
   const macdBullish   = (macdHistogram > 0) || ((macdPrev?.histogram ?? 0) < 0 && macdHistogram >= 0);
 
-  // ADX trend strength (4H) — needs high/low/close
   let adxValue = 20;
   try {
     const adxArr = ADX.calculate({ period: 14, high: highs4h, low: lows4h, close: closes4h });
     adxValue = adxArr[adxArr.length - 1]?.adx ?? 20;
-  } catch { /* keep default 20 (weak/no trend) */ }
+  } catch { /* default */ }
 
-  // Volume surge vs 24h baseline
-  const recentVol  = volumes1h.slice(-3).reduce((s, v) => s + v, 0) / 3;
+  const recentVol   = volumes1h.slice(-3).reduce((s, v) => s + v, 0) / 3;
   const baselineVol = volumes1h.slice(-24, -3).reduce((s, v) => s + v, 0) / 21;
   const volumeRatio = baselineVol > 0 ? recentVol / baselineVol : 1;
 
-  return {
-    price: currentPrice,
-    adx: adxValue,
-    rsi1h,
-    rsi4h,
-    bbWidth,
-    bbPosition,
-    macdHistogram,
-    macdBullish,
-    volumeRatio,
-    change24h,
-  };
+  return { price: currentPrice, adx: adxValue, rsi1h, rsi4h, bbWidth, bbPosition, macdHistogram, macdBullish, volumeRatio, change24h, dataInterval: "hourly" };
 }
 
-function describeMarket(snap: MarketSnapshot): string {
-  const adxLabel =
-    snap.adx < 18 ? "RANGING (no trend)" :
-    snap.adx < 25 ? "WEAK TREND" :
-    snap.adx < 35 ? "MODERATE TREND" : "STRONG TREND";
+// ── Commodity / Forex snapshot via Yahoo Finance ──────────────────────────────
+async function buildYahooSnapshot(symbol: string): Promise<MarketSnapshot> {
+  interface YahooResp {
+    chart: {
+      result: [{
+        meta: { regularMarketPrice: number; previousClose?: number };
+        indicators: {
+          quote: [{ open: (number|null)[]; high: (number|null)[]; low: (number|null)[]; close: (number|null)[]; volume: (number|null)[] }];
+        };
+      }] | null;
+      error?: { description: string };
+    };
+  }
 
-  const rsi1hLabel =
-    snap.rsi1h < 30 ? "OVERSOLD" : snap.rsi1h > 70 ? "OVERBOUGHT" : "NEUTRAL";
-  const rsi4hLabel =
-    snap.rsi4h < 30 ? "OVERSOLD" : snap.rsi4h > 70 ? "OVERBOUGHT" : "NEUTRAL";
-  const bbLabel =
-    snap.bbWidth < 0.015 ? "SQUEEZE (breakout imminent)" :
-    snap.bbWidth > 0.05  ? "EXPANDED (high volatility)" : "NORMAL";
+  const { data } = await axios.get<YahooResp>(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`,
+    { params: { interval: "1d", range: "1y" }, headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }
+  );
+
+  const result = data?.chart?.result?.[0];
+  if (!result) throw new Error(data?.chart?.error?.description ?? `No Yahoo Finance data for ${symbol}`);
+
+  const q = result.indicators.quote[0];
+  const closes  = q.close.filter((c): c is number => c !== null && !isNaN(c));
+  const highs   = q.high.filter((h): h is number => h !== null && !isNaN(h));
+  const lows    = q.low.filter((l): l is number => l !== null && !isNaN(l));
+  const volumes = q.volume.filter((v): v is number => v !== null && !isNaN(v));
+
+  if (closes.length < 30) throw new Error(`Only ${closes.length} daily bars for ${symbol} — need ≥30`);
+
+  const currentPrice = result.meta.regularMarketPrice;
+  const prevClose    = result.meta.previousClose ?? closes[closes.length - 2];
+  const change24h    = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+
+  const rsiDaily = (RSI.calculate({ period: 14, values: closes }) ?? []).slice(-1)[0] ?? 50;
+
+  const bbArr      = BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 });
+  const bb         = bbArr[bbArr.length - 1];
+  const bbWidth    = bb ? (bb.upper - bb.lower) / bb.middle : 0.02;
+  const bbPosition = bb && bb.upper !== bb.lower ? (currentPrice - bb.lower) / (bb.upper - bb.lower) : 0.5;
+
+  const macdArr     = MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false });
+  const macdLast    = macdArr[macdArr.length - 1];
+  const macdPrev    = macdArr[macdArr.length - 2];
+  const macdHistogram = macdLast?.histogram ?? 0;
+  const macdBullish   = (macdHistogram > 0) || ((macdPrev?.histogram ?? 0) < 0 && macdHistogram >= 0);
+
+  let adxValue = 20;
+  if (highs.length >= 28 && lows.length >= 28) {
+    try {
+      const adxArr = ADX.calculate({ period: 14, high: highs.slice(-60), low: lows.slice(-60), close: closes.slice(-60) });
+      adxValue = adxArr[adxArr.length - 1]?.adx ?? 20;
+    } catch { /* default */ }
+  }
+
+  let volumeRatio = 1;
+  if (volumes.length >= 24) {
+    const recent   = volumes.slice(-3).reduce((s, v) => s + v, 0) / 3;
+    const baseline = volumes.slice(-24, -3).reduce((s, v) => s + v, 0) / 21;
+    volumeRatio = baseline > 0 ? recent / baseline : 1;
+  }
+
+  return { price: currentPrice, adx: adxValue, rsi1h: rsiDaily, rsi4h: rsiDaily, bbWidth, bbPosition, macdHistogram, macdBullish, volumeRatio, change24h, dataInterval: "daily" };
+}
+
+// ── Market description string for Claude ──────────────────────────────────────
+function describeMarket(snap: MarketSnapshot, news: NewsContext, category: AssetCategory): string {
+  const isDaily  = snap.dataInterval === "daily";
+  const ivLabel  = isDaily ? "Daily" : "1H / 4H";
+
+  const adxLabel  = snap.adx < 18 ? "RANGING" : snap.adx < 25 ? "WEAK TREND" : snap.adx < 35 ? "MODERATE TREND" : "STRONG TREND";
+  const rsiLabel  = snap.rsi1h < 30 ? "OVERSOLD" : snap.rsi1h > 70 ? "OVERBOUGHT" : "NEUTRAL";
+  const bbLabel   = snap.bbWidth < 0.015 ? "SQUEEZE — breakout imminent" : snap.bbWidth > 0.05 ? "EXPANDED — high volatility" : "NORMAL";
   const macdLabel = snap.macdBullish ? "BULLISH" : "BEARISH";
-  const volLabel =
-    snap.volumeRatio > 2   ? "SURGE (strong conviction)" :
-    snap.volumeRatio < 0.5 ? "DRY (weak conviction)" : "NORMAL";
+  const volLabel  = snap.volumeRatio > 2 ? "SURGE — strong conviction" : snap.volumeRatio < 0.5 ? "DRY — weak conviction" : "NORMAL";
 
-  return [
-    `Price: $${snap.price.toFixed(2)} (24h: ${snap.change24h > 0 ? "+" : ""}${snap.change24h.toFixed(2)}%)`,
-    `ADX (4H): ${snap.adx.toFixed(1)} — ${adxLabel}`,
-    `RSI 1H: ${snap.rsi1h.toFixed(1)} — ${rsi1hLabel}`,
-    `RSI 4H: ${snap.rsi4h.toFixed(1)} — ${rsi4hLabel}`,
-    `BB Width (1H): ${(snap.bbWidth * 100).toFixed(2)}% — ${bbLabel}`,
+  const techSection = [
+    `Price: ${snap.price < 10 ? snap.price.toFixed(4) : `$${snap.price.toFixed(2)}`} (24h: ${snap.change24h > 0 ? "+" : ""}${snap.change24h.toFixed(2)}%)`,
+    `ADX (${ivLabel}): ${snap.adx.toFixed(1)} — ${adxLabel}`,
+    `RSI (${isDaily ? "14-day" : "1H"}): ${snap.rsi1h.toFixed(1)} — ${rsiLabel}`,
+    isDaily ? null : `RSI 4H: ${snap.rsi4h.toFixed(1)}`,
+    `BB Width (${isDaily ? "20-day" : "1H"}): ${(snap.bbWidth * 100).toFixed(2)}% — ${bbLabel}`,
     `BB Position: ${(snap.bbPosition * 100).toFixed(0)}% (0=lower band, 100=upper band)`,
-    `MACD (4H): ${snap.macdHistogram > 0 ? "+" : ""}${snap.macdHistogram.toFixed(4)} — ${macdLabel}`,
-    `Volume vs 24h avg: ${snap.volumeRatio.toFixed(2)}x — ${volLabel}`,
-  ].join("\n");
+    `MACD (${isDaily ? "daily" : "4H"}): ${snap.macdHistogram > 0 ? "+" : ""}${snap.macdHistogram.toFixed(6)} — ${macdLabel}`,
+    `Volume vs baseline: ${snap.volumeRatio.toFixed(2)}x — ${volLabel}`,
+  ].filter(Boolean).join("\n");
+
+  const sentimentColor = news.sentiment === "BULLISH" ? "🟢" : news.sentiment === "BEARISH" ? "🔴" : "🟡";
+  const newsSection = news.headlines.length > 0 ? [
+    `\n## News Intelligence (${news.sources.join(", ")})`,
+    `Overall sentiment: ${sentimentColor} ${news.sentiment} (score ${news.sentimentScore > 0 ? "+" : ""}${news.sentimentScore.toFixed(2)})`,
+    `Bullish: ${news.bullishCount} headlines | Bearish: ${news.bearishCount} headlines`,
+    `Recent headlines:`,
+    ...news.headlines.slice(0, 7).map((h, i) => `${i + 1}. "${h}"`),
+  ].join("\n") : "\n## News Intelligence\nNo news headlines retrieved — rely solely on technical data.";
+
+  return techSection + newsSection;
 }
 
-export async function getBotRecommendation(symbol: string): Promise<BotRecommendation> {
-  // Fail fast — check key before burning CoinGecko rate limit quota
+// ── Main export ───────────────────────────────────────────────────────────────
+export async function getBotRecommendation(symbol: string, category: AssetCategory = "crypto"): Promise<BotRecommendation> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to Netlify environment variables");
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
 
-  const snap = await buildMarketSnapshot(symbol);
+  // Build market snapshot (crypto via CoinGecko, others via Yahoo Finance)
+  const snap = category === "crypto"
+    ? await buildCryptoSnapshot(symbol)
+    : await buildYahooSnapshot(symbol);
+
+  // Fetch news context in parallel with Claude prep (non-blocking failure)
+  const news = await fetchNewsContext(symbol, category).catch((): NewsContext => ({
+    headlines: [], sentiment: "NEUTRAL", sentimentScore: 0,
+    bullishCount: 0, bearishCount: 0, sources: [],
+  }));
 
   const client = new Anthropic({ apiKey });
 
-  const systemPrompt = `You are an expert algorithmic crypto trader and bot strategy architect specializing in Binance automated trading. You analyze real-time technical indicators and recommend the single best bot configuration that will profit from current conditions while remaining completely safe from Binance account restrictions.
+  const isCrypto     = category === "crypto";
+  const assetLabel   = category === "crypto" ? "crypto (Binance)" : category === "commodity" ? "commodity" : "forex pair";
+  const execNote     = isCrypto
+    ? "Execution: Binance auto-bot (paper or live). Include standard bot config."
+    : "Execution: Advisory only — user trades manually on their broker. No Binance bot fields needed.";
 
-## Strategy Selection Rules
+  const systemPrompt = `You are an expert investment analyst and algorithmic strategy architect. You combine technical analysis with financial news sentiment to give clear, actionable investment recommendations.
 
-**GRID bot** — choose when:
-- ADX < 22 (market is ranging, no clear trend)
-- BB width between 1.5% and 5% (price oscillating in a defined range)
-- Grid range: current price ±10-15% based on recent support/resistance
-- Grid levels: 6-12 (fewer = larger gaps between orders = safer)
-- Minimum $1500 spacing per grid level for BTC, $30 for altcoins
+You analyze ${assetLabel} assets across Crypto, Commodities, and Forex markets.
+${execNote}
 
-**MACD bot** — choose when:
-- ADX > 25 (trending market, momentum is real)
-- MACD histogram is positive and rising (confirms direction)
-- Interval: always 4h (cleanest signals, less noise than 1h)
+## Strategy Selection (for crypto auto-bots)
+**GRID** — ADX < 22, BB width 1.5–5%, price oscillating in range
+**MACD** — ADX > 25, MACD histogram positive and rising, use 4H interval
+**RSI** — RSI dips below 35 regularly, sideways-to-bullish market, use 4H
+**DCA** — No clear pattern or strong long-term bullish asset, safest choice
 
-**RSI bot** — choose when:
-- RSI regularly dips below 35 on 1H or 4H (asset has defined oscillation pattern)
-- Market is sideways-to-bullish (not a strong downtrend)
-- rsiLow: 32-35 (wider than traditional 30 to catch crypto's faster moves)
-- rsiHigh: 65-68 (exit sooner in crypto due to fast reversals)
-- Interval: 4h preferred (reduces false signals)
+## Investment Action Rules
+- **BUY** when: RSI < 45 + MACD bullish + news sentiment BULLISH/NEUTRAL + ADX suggests trend or range-bottom
+- **SELL/EXIT** when: RSI > 65 + MACD bearish + news sentiment BEARISH + near BB upper band
+- **HOLD** when: conflicting signals or RSI 45–65 with neutral news
 
-**DCA bot** — choose when:
-- No clear pattern for other bots (ADX 20-25, normal BB, mixed MACD)
-- Strong long-term bullish asset (BTC/ETH) regardless of short-term
-- User wants safest, most consistent accumulation
-- Interval: 4h minimum (never shorter — preserves Binance account health)
+## Level Calculation
+- Entry: current price
+- Stop Loss: crypto 4–5%, commodity 1.5–2%, forex 0.5–0.8% from entry
+- Take Profit: 2.2–2.5× risk distance (minimum 2:1 R/R)
+- Adjust tighter if BB width is narrow; wider if ADX > 30
 
-## Binance Account Safety Requirements (NON-NEGOTIABLE)
-- Minimum order amount: $15 USDT (Binance enforces $10 min; $15 gives safety margin)
-- No interval shorter than 1h for any bot (30m only for DCA on major pairs)
-- Grid spacing must ensure orders don't fill within seconds of each other
-- Never recommend config that would generate >10 orders per hour
-- MARKET orders only (already enforced in code)
+## News Integration
+Weight news sentiment alongside technical signals:
+- Strong bullish news + bullish technicals → increase confidence
+- Conflicting signals (bearish news + bullish tech) → reduce confidence, flag risk
+- Mention key news themes in rationale
 
-Respond ONLY with valid JSON — no explanation outside the JSON, no markdown code fences.`;
+Respond with ONLY valid JSON — no markdown fences, no extra text.`;
 
-  const userMessage = `Analyze ${symbol} market conditions and recommend the optimal bot:
+  const userMsg = `Analyze ${symbol} (${category}) and provide investment recommendation:
 
-${describeMarket(snap)}
+## Technical Data
+${describeMarket(snap, news, category)}
 
-Provide your recommendation as JSON:
+Respond as JSON:
 {
   "strategy": "DCA" | "RSI" | "MACD" | "GRID",
-  "name": "<descriptive name max 28 chars>",
-  "config": {
-    <strategy-specific fields — see rules above>
-  },
-  "rationale": "<2-3 sentences: why this strategy NOW, what market condition makes it optimal, expected behavior>",
+  "name": "<descriptive name ≤28 chars>",
+  "config": { <strategy fields: amount(number), interval(string), plus strategy-specific> },
+  "action": "BUY" | "SELL" | "HOLD",
+  "actionReason": "<1-2 sentences: what specifically triggered this action right now>",
+  "entryPrice": <current price as number>,
+  "stopLoss": <calculated stop-loss price as number>,
+  "takeProfit": <calculated take-profit price as number>,
+  "riskReward": <ratio as number e.g. 2.2>,
+  "rationale": "<2-3 sentences: why this strategy, what market condition, news impact>",
   "marketPhase": "RANGING" | "TRENDING_UP" | "TRENDING_DOWN" | "VOLATILE" | "ACCUMULATION",
-  "confidence": <50-92>,
-  "safetyNotes": ["<note 1>", "<note 2>", "<note 3>"]
+  "confidence": <integer 45-92>,
+  "safetyNotes": ["<risk note 1>", "<risk note 2>", "<note 3>"]
 }`;
 
   const message = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 700,
-    messages: [{ role: "user", content: userMessage }],
+    max_tokens: 900,
+    messages: [{ role: "user", content: userMsg }],
     system: systemPrompt,
   });
 
   const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type");
+  if (content.type !== "text") throw new Error("Unexpected Claude response type");
 
-  // Strip any accidental markdown fences
   let text = content.text.trim();
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch?.[1]) text = fenceMatch[1].trim();
 
-  const parsed = JSON.parse(text) as Omit<BotRecommendation, "symbol" | "rawMarketData">;
+  const parsed = JSON.parse(text) as Omit<BotRecommendation, "symbol" | "category" | "rawMarketData" | "newsContext" | "executionMode">;
 
-  // Enforce minimum safety thresholds — never trust the model alone
+  // Safety guards
   const cfg = parsed.config as Record<string, unknown>;
   if (typeof cfg.amount === "number" && cfg.amount < 15) cfg.amount = 15;
   if (cfg.interval === "30m" && parsed.strategy !== "DCA") cfg.interval = "1h";
 
-  return { ...parsed, symbol, rawMarketData: snap };
+  // Ensure price levels are sensible (fall back to calculated values if model hallucinated)
+  const price    = snap.price;
+  const slPct    = category === "forex" ? 0.007 : category === "commodity" ? 0.02 : 0.045;
+  const tpPct    = slPct * 2.2;
+  const isBuyAct = (parsed.action ?? "HOLD") === "BUY";
+
+  const entryPrice = parsed.entryPrice && Math.abs(parsed.entryPrice - price) / price < 0.05 ? parsed.entryPrice : price;
+  const stopLoss   = parsed.stopLoss  && parsed.stopLoss > 0 && Math.abs(parsed.stopLoss  - price) / price < 0.2
+    ? parsed.stopLoss
+    : isBuyAct ? price * (1 - slPct) : price * (1 + slPct);
+  const takeProfit = parsed.takeProfit && parsed.takeProfit > 0 && Math.abs(parsed.takeProfit - price) / price < 0.4
+    ? parsed.takeProfit
+    : isBuyAct ? price * (1 + tpPct) : price * (1 - tpPct);
+  const riskReward = parsed.riskReward && parsed.riskReward > 0 ? parsed.riskReward : 2.2;
+
+  return {
+    ...parsed,
+    symbol,
+    category,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    riskReward,
+    rawMarketData: snap,
+    newsContext: news,
+    executionMode: isCrypto ? "AUTO" : "ADVISORY",
+  };
 }

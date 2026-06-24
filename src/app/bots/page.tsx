@@ -2,7 +2,30 @@
 
 import { useEffect, useState } from "react";
 import type { BotRecommendation } from "@/lib/bot-advisor";
+import { COMMODITY_ASSETS, FOREX_ASSETS } from "@/lib/market-signals-types";
 
+// ── Asset lists ───────────────────────────────────────────────────────────────
+const CRYPTO_PAIRS = [
+  { symbol: "BTCUSDT",  label: "Bitcoin (BTC)"    },
+  { symbol: "ETHUSDT",  label: "Ethereum (ETH)"   },
+  { symbol: "BNBUSDT",  label: "BNB"               },
+  { symbol: "SOLUSDT",  label: "Solana (SOL)"      },
+  { symbol: "ADAUSDT",  label: "Cardano (ADA)"     },
+  { symbol: "DOGEUSDT", label: "Dogecoin (DOGE)"   },
+  { symbol: "XRPUSDT",  label: "XRP"               },
+  { symbol: "AVAXUSDT", label: "Avalanche (AVAX)"  },
+  { symbol: "DOTUSDT",  label: "Polkadot (DOT)"    },
+  { symbol: "LINKUSDT", label: "Chainlink (LINK)"  },
+  { symbol: "LTCUSDT",  label: "Litecoin (LTC)"    },
+  { symbol: "MATICUSDT",label: "Polygon (MATIC)"   },
+];
+
+const COMMODITY_PAIRS = COMMODITY_ASSETS.map(a => ({ symbol: a.symbol, label: `${a.label} (${a.short})` }));
+const FOREX_PAIRS     = FOREX_ASSETS.map(a => ({ symbol: a.symbol, label: a.label }));
+
+type AssetCategory = "crypto" | "commodity" | "forex";
+
+// ── Existing bots ─────────────────────────────────────────────────────────────
 interface Bot {
   id: string;
   name: string;
@@ -16,16 +39,10 @@ interface Bot {
 }
 
 const STRATEGIES = [
-  { id: "DCA",  label: "DCA",      desc: "Dollar Cost Averaging — buys at fixed intervals regardless of price",           icon: "📅" },
-  { id: "GRID", label: "Grid",     desc: "Places buy orders at regular price intervals within a defined range",            icon: "🔲" },
-  { id: "RSI",  label: "RSI Bot",  desc: "Buys when RSI < threshold (oversold), exits when overbought",                   icon: "📊" },
-  { id: "MACD", label: "MACD",     desc: "Trades on MACD histogram zero-line crossover — best in trending markets",       icon: "📈" },
-];
-
-const ALL_PAIRS = [
-  "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT",
-  "DOGEUSDT", "XRPUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
-  "MATICUSDT", "LTCUSDT",
+  { id: "DCA",  label: "DCA",     desc: "Buy at fixed intervals regardless of price — safest accumulation strategy", icon: "📅" },
+  { id: "GRID", label: "Grid",    desc: "Buy at multiple price levels within a defined range — profits from oscillation", icon: "🔲" },
+  { id: "RSI",  label: "RSI Bot", desc: "Buy when RSI < threshold (oversold), exit when overbought",                  icon: "📊" },
+  { id: "MACD", label: "MACD",    desc: "Trades on MACD histogram crossover — best in trending markets",              icon: "📈" },
 ];
 
 const STATUS_COLORS = {
@@ -42,6 +59,12 @@ const PHASE_COLORS: Record<string, string> = {
   ACCUMULATION:  "text-purple-400 bg-purple-400/10 border-purple-400/30",
 };
 
+const ACTION_COLORS: Record<string, string> = {
+  BUY:  "text-[#00ff88] bg-[#00ff88]/10 border-[#00ff88]/30",
+  SELL: "text-red-400 bg-red-400/10 border-red-400/30",
+  HOLD: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30",
+};
+
 const DEFAULT_FORM = {
   name: "", strategy: "DCA", symbol: "BTCUSDT",
   interval: "4h", amount: "50",
@@ -49,39 +72,72 @@ const DEFAULT_FORM = {
   gridLow: "", gridHigh: "", gridLevels: "8",
 };
 
+function SentimentBadge({ sentiment }: { sentiment: string }) {
+  const cfg =
+    sentiment === "BULLISH" ? { color: "#00ff88", bg: "#00ff8810", label: "🟢 Bullish News" }
+    : sentiment === "BEARISH" ? { color: "#ef4444", bg: "#ef444410", label: "🔴 Bearish News" }
+    : { color: "#f59e0b", bg: "#f59e0b10", label: "🟡 Neutral News" };
+  return (
+    <span className="px-2 py-0.5 rounded-lg text-xs font-semibold"
+      style={{ color: cfg.color, background: cfg.bg }}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function formatLevel(price: number, category: AssetCategory) {
+  if (category === "forex") return price.toFixed(4);
+  return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
 export default function BotsPage() {
-  const [bots, setBots]               = useState<Bot[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [showForm, setShowForm]       = useState(false);
-  const [form, setForm]               = useState(DEFAULT_FORM);
-  const [creating, setCreating]       = useState(false);
-  const [rec, setRec]                 = useState<BotRecommendation | null>(null);
-  const [loadingRec, setLoadingRec]   = useState(false);
-  const [recError, setRecError]       = useState<string | null>(null);
+  const [bots, setBots]     = useState<Bot[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState(DEFAULT_FORM);
+  const [creating, setCreating] = useState(false);
+  const [rec, setRec]           = useState<BotRecommendation | null>(null);
+  const [loadingRec, setLoadingRec] = useState(false);
+  const [recError, setRecError]     = useState<string | null>(null);
+  const [assetClass, setAssetClass] = useState<AssetCategory>("crypto");
+  const [showAllNews, setShowAllNews] = useState(false);
+
+  const assetPairs =
+    assetClass === "crypto" ? CRYPTO_PAIRS
+    : assetClass === "commodity" ? COMMODITY_PAIRS
+    : FOREX_PAIRS;
 
   async function fetchBots() {
     try {
       const res = await fetch("/api/bots");
       const data = await res.json() as { bots?: Bot[] };
       setBots(data.bots ?? []);
-    } catch {
-      // silently fail — empty state shown
-    } finally {
+    } catch { /* silently fail */ } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => { void fetchBots(); }, []);
 
+  // When asset class changes, reset symbol to first pair of that class
+  function switchAssetClass(cls: AssetCategory) {
+    setAssetClass(cls);
+    setRec(null);
+    setRecError(null);
+    const pairs = cls === "crypto" ? CRYPTO_PAIRS : cls === "commodity" ? COMMODITY_PAIRS : FOREX_PAIRS;
+    setForm(f => ({ ...f, symbol: pairs[0]?.symbol ?? "" }));
+  }
+
   async function askAI() {
     setLoadingRec(true);
     setRecError(null);
     setRec(null);
+    setShowAllNews(false);
     try {
       const res = await fetch("/api/advisor/bot-recommendation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: form.symbol }),
+        body: JSON.stringify({ symbol: form.symbol, category: assetClass }),
       });
       const data = await res.json() as BotRecommendation & { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Unknown error");
@@ -136,12 +192,11 @@ export default function BotsPage() {
     setCreating(false);
   }
 
-  async function toggleBot(id: string, currentStatus: string) {
-    const newStatus = currentStatus === "RUNNING" ? "STOPPED" : "RUNNING";
+  async function toggleBot(id: string, status: string) {
     await fetch("/api/bots", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status: newStatus }),
+      body: JSON.stringify({ id, status: status === "RUNNING" ? "STOPPED" : "RUNNING" }),
     });
     void fetchBots();
   }
@@ -152,28 +207,31 @@ export default function BotsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Trading Bots</h1>
-          <p className="text-[#64748b] text-sm mt-1">Automate your strategy — AI recommends the best bot for current conditions</p>
+          <h1 className="text-2xl font-bold text-white">Trading Bots & AI Advisor</h1>
+          <p className="text-[#64748b] text-sm mt-1">
+            News-enhanced AI analysis across Crypto · Commodities · Forex — click <span className="text-purple-400 font-medium">Ask Claude</span> on any asset
+          </p>
         </div>
         <button
           onClick={() => { setShowForm(!showForm); setRec(null); setRecError(null); }}
           className="px-5 py-2.5 bg-[#00ff88] text-black font-semibold rounded-xl hover:bg-[#00cc6a] transition-colors text-sm"
         >
-          + Create Bot
+          + Analyze & Create Bot
         </button>
       </div>
 
-      {/* Strategy Cards */}
+      {/* ── Strategy overview cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {STRATEGIES.map((s) => (
           <div
             key={s.id}
             className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-4 hover:border-[#00ff88]/30 transition-colors cursor-pointer"
-            onClick={() => { setForm((f) => ({ ...f, strategy: s.id })); setShowForm(true); setRec(null); }}
+            onClick={() => { setForm(f => ({ ...f, strategy: s.id })); setShowForm(true); setRec(null); }}
           >
             <div className="text-2xl mb-2">{s.icon}</div>
             <h3 className="font-semibold text-white text-sm">{s.label}</h3>
@@ -182,69 +240,83 @@ export default function BotsPage() {
         ))}
       </div>
 
-      {/* Create Bot Form */}
+      {/* ── Create / Analyze Form ────────────────────────────────────────── */}
       {showForm && (
         <div className="bg-[#0f1117] border border-[#00ff88]/30 rounded-2xl p-6 space-y-5">
-          <h2 className="font-semibold text-white">Configure New Bot</h2>
+          <h2 className="font-semibold text-white">AI Analysis + Bot Configuration</h2>
 
-          {/* Basic fields */}
+          {/* Asset class tabs */}
+          <div className="flex gap-0 rounded-xl overflow-hidden border border-[#1e2130] w-fit">
+            {(["crypto", "commodity", "forex"] as AssetCategory[]).map((cls) => (
+              <button
+                key={cls}
+                onClick={() => switchAssetClass(cls)}
+                className={`px-4 py-2 text-xs font-semibold capitalize transition-colors ${
+                  assetClass === cls
+                    ? "bg-[#7c3aed] text-white"
+                    : "bg-[#0f1117] text-[#64748b] hover:text-white"
+                }`}
+              >
+                {cls === "crypto" ? "🪙 Crypto" : cls === "commodity" ? "⛏ Commodity" : "💱 Forex"}
+              </button>
+            ))}
+          </div>
+
+          {assetClass !== "crypto" && (
+            <div className="flex items-center gap-2 p-3 bg-[#f59e0b]/5 border border-[#f59e0b]/20 rounded-xl text-xs text-[#f59e0b]">
+              ⚠ <span><strong>Advisory Mode</strong> — AI analysis works for all asset classes, but auto-execution only works for Crypto (Binance). For Commodities and Forex, use the AI recommendation to trade on your broker manually.</span>
+            </div>
+          )}
+
+          {/* Form fields */}
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-[#64748b] mb-1 block">Bot Name</label>
               <input
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="My DCA Bot"
+                onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="My AI Strategy Bot"
                 className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white placeholder-[#475569] focus:outline-none focus:border-[#00ff88]/50 text-sm"
               />
             </div>
 
             <div>
               <label className="text-xs text-[#64748b] mb-1 block">Strategy</label>
-              <select
-                value={form.strategy}
-                onChange={(e) => setForm((f) => ({ ...f, strategy: e.target.value }))}
-                className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm"
-              >
-                {STRATEGIES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              <select value={form.strategy} onChange={e => setForm(f => ({ ...f, strategy: e.target.value }))}
+                className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm">
+                {STRATEGIES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="text-xs text-[#64748b] mb-1 block">Trading Pair</label>
+              <label className="text-xs text-[#64748b] mb-1 block">Asset</label>
               <select
                 value={form.symbol}
-                onChange={(e) => { setForm((f) => ({ ...f, symbol: e.target.value })); setRec(null); }}
+                onChange={e => { setForm(f => ({ ...f, symbol: e.target.value })); setRec(null); }}
                 className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm"
               >
-                {ALL_PAIRS.map((p) => <option key={p} value={p}>{p}</option>)}
+                {assetPairs.map(p => <option key={p.symbol} value={p.symbol}>{p.label}</option>)}
               </select>
             </div>
 
             <div>
               <label className="text-xs text-[#64748b] mb-1 block">Amount per Order (USDT)</label>
-              <input
-                type="number" min="15"
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm"
-              />
-              <p className="text-xs text-[#475569] mt-1">Min $15 (Binance enforces $10 minimum)</p>
+              <input type="number" min="15" value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm" />
+              <p className="text-xs text-[#475569] mt-1">Min $15 (Binance $10 minimum + buffer)</p>
             </div>
 
             {(form.strategy === "DCA" || form.strategy === "RSI" || form.strategy === "MACD") && (
               <div>
                 <label className="text-xs text-[#64748b] mb-1 block">Check Interval</label>
-                <select
-                  value={form.interval}
-                  onChange={(e) => setForm((f) => ({ ...f, interval: e.target.value }))}
-                  className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm"
-                >
-                  {form.strategy === "DCA"  && <option value="30m">Every 30 minutes</option>}
+                <select value={form.interval} onChange={e => setForm(f => ({ ...f, interval: e.target.value }))}
+                  className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm">
+                  {form.strategy === "DCA" && <option value="30m">Every 30 min</option>}
                   <option value="1h">Every 1 hour</option>
                   <option value="4h">Every 4 hours</option>
-                  {form.strategy === "DCA"  && <option value="12h">Every 12 hours</option>}
-                  {form.strategy === "DCA"  && <option value="24h">Every 24 hours</option>}
+                  {form.strategy === "DCA" && <option value="12h">Every 12 hours</option>}
+                  {form.strategy === "DCA" && <option value="24h">Every 24 hours</option>}
                 </select>
               </div>
             )}
@@ -253,12 +325,12 @@ export default function BotsPage() {
               <>
                 <div>
                   <label className="text-xs text-[#64748b] mb-1 block">RSI Buy Below (oversold)</label>
-                  <input type="number" value={form.rsiLow} onChange={(e) => setForm((f) => ({ ...f, rsiLow: e.target.value }))}
+                  <input type="number" value={form.rsiLow} onChange={e => setForm(f => ({ ...f, rsiLow: e.target.value }))}
                     className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs text-[#64748b] mb-1 block">RSI Exit Above (overbought)</label>
-                  <input type="number" value={form.rsiHigh} onChange={(e) => setForm((f) => ({ ...f, rsiHigh: e.target.value }))}
+                  <input type="number" value={form.rsiHigh} onChange={e => setForm(f => ({ ...f, rsiHigh: e.target.value }))}
                     className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm" />
                 </div>
               </>
@@ -267,33 +339,32 @@ export default function BotsPage() {
             {form.strategy === "GRID" && (
               <>
                 <div>
-                  <label className="text-xs text-[#64748b] mb-1 block">Grid Low Price ($)</label>
-                  <input type="number" value={form.gridLow} onChange={(e) => setForm((f) => ({ ...f, gridLow: e.target.value }))}
-                    placeholder="e.g. 90000"
-                    className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white placeholder-[#475569] focus:outline-none focus:border-[#00ff88]/50 text-sm" />
+                  <label className="text-xs text-[#64748b] mb-1 block">Grid Low Price</label>
+                  <input type="number" value={form.gridLow} onChange={e => setForm(f => ({ ...f, gridLow: e.target.value }))}
+                    placeholder="e.g. 90000" className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white placeholder-[#475569] focus:outline-none focus:border-[#00ff88]/50 text-sm" />
                 </div>
                 <div>
-                  <label className="text-xs text-[#64748b] mb-1 block">Grid High Price ($)</label>
-                  <input type="number" value={form.gridHigh} onChange={(e) => setForm((f) => ({ ...f, gridHigh: e.target.value }))}
-                    placeholder="e.g. 110000"
-                    className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white placeholder-[#475569] focus:outline-none focus:border-[#00ff88]/50 text-sm" />
+                  <label className="text-xs text-[#64748b] mb-1 block">Grid High Price</label>
+                  <input type="number" value={form.gridHigh} onChange={e => setForm(f => ({ ...f, gridHigh: e.target.value }))}
+                    placeholder="e.g. 110000" className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white placeholder-[#475569] focus:outline-none focus:border-[#00ff88]/50 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs text-[#64748b] mb-1 block">Grid Levels</label>
-                  <input type="number" value={form.gridLevels} onChange={(e) => setForm((f) => ({ ...f, gridLevels: e.target.value }))}
+                  <input type="number" value={form.gridLevels} onChange={e => setForm(f => ({ ...f, gridLevels: e.target.value }))}
                     className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white focus:outline-none focus:border-[#00ff88]/50 text-sm" />
-                  <p className="text-xs text-[#475569] mt-1">6-12 levels recommended (wider gaps = safer)</p>
                 </div>
               </>
             )}
           </div>
 
-          {/* AI Recommendation Panel */}
-          <div className="border border-[#1e2130] rounded-xl overflow-hidden">
+          {/* ── AI Intelligence Panel ──────────────────────────────────── */}
+          <div className="border border-[#1e2130] rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 bg-[#0a0d14]">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-white">AI Strategy Advisor</span>
-                <span className="text-xs text-[#64748b]">— Claude analyzes {form.symbol} live market conditions</span>
+              <div>
+                <span className="text-sm font-medium text-white">AI Investment Intelligence</span>
+                <span className="text-xs text-[#64748b] ml-2">
+                  — Technical analysis + live news from Reuters, Yahoo Finance, MarketWatch
+                </span>
               </div>
               <button
                 onClick={() => void askAI()}
@@ -303,7 +374,7 @@ export default function BotsPage() {
                 {loadingRec ? (
                   <>
                     <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Analyzing...
+                    Analyzing news + charts...
                   </>
                 ) : (
                   <>✦ Ask Claude</>
@@ -319,28 +390,149 @@ export default function BotsPage() {
 
             {rec && (
               <div className="p-4 bg-[#0a0d14] border-t border-[#1e2130] space-y-4">
-                {/* Header row */}
-                <div className="flex items-center justify-between flex-wrap gap-3">
+
+                {/* Action banner */}
+                <div className={`flex items-center justify-between p-3 rounded-xl border ${ACTION_COLORS[rec.action]}`}>
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">
-                      {STRATEGIES.find((s) => s.id === rec.strategy)?.icon ?? "🤖"}
-                    </span>
+                    <span className="text-2xl font-black">{rec.action === "BUY" ? "▲" : rec.action === "SELL" ? "▼" : "⬦"}</span>
                     <div>
-                      <p className="font-semibold text-white">{rec.name}</p>
-                      <p className="text-xs text-[#64748b]">{rec.strategy} strategy · {rec.confidence}% confidence</p>
+                      <p className="font-bold text-base">{rec.action} {rec.symbol.replace("USDT", "").replace("=X", "").replace("=F", "")}</p>
+                      <p className="text-xs opacity-75">{rec.actionReason}</p>
                     </div>
                   </div>
-                  <span className={`px-3 py-1 text-xs font-medium rounded-full border ${PHASE_COLORS[rec.marketPhase] ?? "text-white border-white/20"}`}>
-                    {rec.marketPhase.replace("_", " ")}
-                  </span>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-2xl font-black">{rec.confidence}%</p>
+                    <p className="text-[10px] opacity-60">AI confidence</p>
+                  </div>
+                </div>
+
+                {/* Strategy + phase */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{STRATEGIES.find(s => s.id === rec.strategy)?.icon}</span>
+                    <div>
+                      <p className="font-semibold text-white text-sm">{rec.name}</p>
+                      <p className="text-xs text-[#64748b]">{rec.strategy} strategy</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border ${PHASE_COLORS[rec.marketPhase] ?? ""}`}>
+                      {rec.marketPhase.replace(/_/g, " ")}
+                    </span>
+                    {rec.executionMode === "ADVISORY" && (
+                      <span className="px-2.5 py-1 text-xs font-medium rounded-full border text-yellow-400 bg-yellow-400/10 border-yellow-400/30">
+                        ADVISORY
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Rationale */}
                 <p className="text-sm text-[#94a3b8] leading-relaxed">{rec.rationale}</p>
 
-                {/* Config preview */}
+                {/* ── Trade Levels ──────────────────────────────────────── */}
+                <div>
+                  <p className="text-xs text-[#64748b] uppercase tracking-wider mb-2">Trade Levels</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: "Entry",       value: formatLevel(rec.entryPrice,  rec.category), color: "text-white"        },
+                      { label: "Stop Loss",   value: formatLevel(rec.stopLoss,    rec.category), color: "text-red-400"      },
+                      { label: "Take Profit", value: formatLevel(rec.takeProfit,  rec.category), color: "text-[#00ff88]"    },
+                      { label: "Risk/Reward", value: `${rec.riskReward}:1`,                      color: "text-[#a78bfa]"    },
+                    ].map(item => (
+                      <div key={item.label} className="bg-[#0f1117] border border-white/5 rounded-xl p-3 text-center">
+                        <p className="text-[10px] text-[#64748b] mb-1">{item.label}</p>
+                        <p className={`text-sm font-bold ${item.color}`}>{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── News Intelligence ─────────────────────────────────── */}
+                <div className="bg-[#0f1117] border border-[#1e2130] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">📰</span>
+                      <p className="text-xs font-semibold text-white">News Intelligence</p>
+                      {rec.newsContext.sources.length > 0 && (
+                        <span className="text-[10px] text-[#475569]">
+                          via {rec.newsContext.sources.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                    <SentimentBadge sentiment={rec.newsContext.sentiment} />
+                  </div>
+
+                  {rec.newsContext.headlines.length > 0 ? (
+                    <>
+                      <div className="flex items-center gap-4 mb-3 text-xs text-[#64748b]">
+                        <span>🟢 {rec.newsContext.bullishCount} bullish</span>
+                        <span>🔴 {rec.newsContext.bearishCount} bearish</span>
+                        <span className="text-white font-semibold">
+                          Score: {rec.newsContext.sentimentScore > 0 ? "+" : ""}{rec.newsContext.sentimentScore.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(showAllNews ? rec.newsContext.headlines : rec.newsContext.headlines.slice(0, 4)).map((h, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs">
+                            <span className="text-[#475569] flex-shrink-0 mt-0.5">{i + 1}.</span>
+                            <span className="text-[#94a3b8] leading-relaxed">{h}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {rec.newsContext.headlines.length > 4 && (
+                        <button
+                          onClick={() => setShowAllNews(!showAllNews)}
+                          className="mt-2 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                        >
+                          {showAllNews ? "Show less ▲" : `Show ${rec.newsContext.headlines.length - 4} more headlines ▼`}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#475569]">No news headlines retrieved — recommendation based on technical analysis only.</p>
+                  )}
+                </div>
+
+                {/* ── Raw Market Data ───────────────────────────────────── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {[
+                    {
+                      label: "ADX",
+                      value: rec.rawMarketData.adx.toFixed(1),
+                      sub: rec.rawMarketData.adx > 25 ? "Trending" : "Ranging",
+                      color: rec.rawMarketData.adx > 25 ? "text-[#00ff88]" : "text-[#f59e0b]",
+                    },
+                    {
+                      label: rec.rawMarketData.dataInterval === "daily" ? "RSI (14D)" : "RSI 1H",
+                      value: rec.rawMarketData.rsi1h.toFixed(1),
+                      sub: rec.rawMarketData.rsi1h < 35 ? "Oversold" : rec.rawMarketData.rsi1h > 65 ? "Overbought" : "Neutral",
+                      color: rec.rawMarketData.rsi1h < 35 ? "text-[#00ff88]" : rec.rawMarketData.rsi1h > 65 ? "text-red-400" : "text-white",
+                    },
+                    {
+                      label: "BB Width",
+                      value: `${(rec.rawMarketData.bbWidth * 100).toFixed(2)}%`,
+                      sub: rec.rawMarketData.bbWidth < 0.015 ? "Squeeze" : "Normal",
+                      color: rec.rawMarketData.bbWidth < 0.015 ? "text-yellow-400" : "text-white",
+                    },
+                    {
+                      label: "Volume",
+                      value: `${rec.rawMarketData.volumeRatio.toFixed(2)}x`,
+                      sub: rec.rawMarketData.volumeRatio > 1.5 ? "Surge" : "Normal",
+                      color: rec.rawMarketData.volumeRatio > 1.5 ? "text-[#00ff88]" : "text-white",
+                    },
+                  ].map(item => (
+                    <div key={item.label} className="bg-[#0f1117] border border-[#1e2130] rounded-lg p-2">
+                      <p className="text-[#64748b] mb-1">{item.label}</p>
+                      <p className={`font-semibold ${item.color}`}>{item.value}</p>
+                      <p className="text-[10px] text-[#475569] mt-0.5">{item.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Strategy config preview */}
                 <div className="bg-[#0f1117] border border-[#1e2130] rounded-xl p-3">
-                  <p className="text-xs text-[#64748b] mb-2 font-medium uppercase tracking-wider">Recommended Config</p>
+                  <p className="text-xs text-[#64748b] mb-2 font-medium uppercase tracking-wider">Bot Config</p>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(rec.config).map(([k, v]) => (
                       <span key={k} className="px-2.5 py-1 bg-[#1a1f2e] rounded-lg text-xs text-white">
@@ -351,99 +543,103 @@ export default function BotsPage() {
                   </div>
                 </div>
 
-                {/* Market data */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="bg-[#0f1117] border border-[#1e2130] rounded-lg p-2">
-                    <p className="text-[#64748b]">ADX (4H)</p>
-                    <p className="text-white font-medium">{rec.rawMarketData.adx.toFixed(1)}</p>
-                  </div>
-                  <div className="bg-[#0f1117] border border-[#1e2130] rounded-lg p-2">
-                    <p className="text-[#64748b]">RSI 1H</p>
-                    <p className={`font-medium ${rec.rawMarketData.rsi1h < 32 ? "text-[#00ff88]" : rec.rawMarketData.rsi1h > 68 ? "text-red-400" : "text-white"}`}>
-                      {rec.rawMarketData.rsi1h.toFixed(1)}
-                    </p>
-                  </div>
-                  <div className="bg-[#0f1117] border border-[#1e2130] rounded-lg p-2">
-                    <p className="text-[#64748b]">BB Width</p>
-                    <p className="text-white font-medium">{(rec.rawMarketData.bbWidth * 100).toFixed(2)}%</p>
-                  </div>
-                  <div className="bg-[#0f1117] border border-[#1e2130] rounded-lg p-2">
-                    <p className="text-[#64748b]">Volume</p>
-                    <p className={`font-medium ${rec.rawMarketData.volumeRatio > 1.5 ? "text-[#00ff88]" : "text-white"}`}>
-                      {rec.rawMarketData.volumeRatio.toFixed(2)}x
-                    </p>
-                  </div>
-                </div>
-
                 {/* Safety notes */}
                 {rec.safetyNotes.length > 0 && (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-[#64748b] uppercase tracking-wider">Risk Notes</p>
                     {rec.safetyNotes.map((note, i) => (
                       <div key={i} className="flex items-start gap-2 text-xs text-[#64748b]">
-                        <span className="text-[#00ff88] shrink-0 mt-0.5">✓</span>
+                        <span className="text-[#f59e0b] shrink-0 mt-0.5">⚠</span>
                         <span>{note}</span>
                       </div>
                     ))}
                   </div>
                 )}
 
-                <button
-                  onClick={applyRecommendation}
-                  className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-xl transition-colors text-sm"
-                >
-                  Use This Configuration →
-                </button>
+                {/* Action buttons */}
+                {rec.executionMode === "AUTO" ? (
+                  <button
+                    onClick={applyRecommendation}
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-xl transition-colors text-sm"
+                  >
+                    Use This Config → Deploy Bot
+                  </button>
+                ) : (
+                  <div className="w-full py-3 px-4 bg-[#f59e0b]/5 border border-[#f59e0b]/30 rounded-xl text-center">
+                    <p className="text-xs text-[#f59e0b] font-semibold mb-0.5">Advisory Mode — Manual Execution Required</p>
+                    <p className="text-[10px] text-[#64748b]">
+                      Use the Entry / Stop Loss / Take Profit levels above when placing your trade on your broker (e.g. MetaTrader, IC Markets, Interactive Brokers)
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
             {!rec && !loadingRec && !recError && (
-              <div className="px-4 py-5 bg-[#0a0d14] border-t border-[#1e2130] text-center text-[#475569] text-sm">
-                Click <span className="text-purple-400 font-medium">Ask Claude</span> to analyze {form.symbol} and get an AI-recommended bot strategy with pre-filled config
+              <div className="px-4 py-6 bg-[#0a0d14] border-t border-[#1e2130] text-center space-y-2">
+                <p className="text-sm text-[#475569]">
+                  Click <span className="text-purple-400 font-medium">Ask Claude</span> to analyze <span className="text-white">{assetPairs.find(p => p.symbol === form.symbol)?.label ?? form.symbol}</span>
+                </p>
+                <p className="text-xs text-[#475569]">
+                  AI combines live price charts with news from Reuters · Yahoo Finance · MarketWatch · CoinDesk
+                </p>
               </div>
             )}
           </div>
 
-          {/* Action buttons */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => void createBot()}
-              disabled={creating || !form.name}
-              className="px-6 py-3 bg-[#00ff88] text-black font-bold rounded-xl hover:bg-[#00cc6a] transition-colors disabled:opacity-50 text-sm"
-            >
-              {creating ? "Deploying..." : "Deploy Bot"}
-            </button>
+          {/* Deploy button (only for crypto) */}
+          {assetClass === "crypto" && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => void createBot()}
+                disabled={creating || !form.name}
+                className="px-6 py-3 bg-[#00ff88] text-black font-bold rounded-xl hover:bg-[#00cc6a] transition-colors disabled:opacity-50 text-sm"
+              >
+                {creating ? "Deploying..." : "Deploy Bot"}
+              </button>
+              <button
+                onClick={() => { setShowForm(false); setRec(null); setRecError(null); }}
+                className="px-6 py-3 border border-[#1e2130] text-[#64748b] rounded-xl hover:text-white text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {assetClass !== "crypto" && (
             <button
               onClick={() => { setShowForm(false); setRec(null); setRecError(null); }}
               className="px-6 py-3 border border-[#1e2130] text-[#64748b] rounded-xl hover:text-white text-sm transition-colors"
             >
-              Cancel
+              Close
             </button>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Bot list */}
+      {/* ── Active Bots List ─────────────────────────────────────────────── */}
       {loading ? (
         <div className="text-center py-12 text-[#64748b]">Loading bots...</div>
       ) : bots.length === 0 ? (
         <div className="text-center py-16 bg-[#0f1117] border border-[#1e2130] rounded-2xl">
           <div className="text-5xl mb-4">🤖</div>
-          <h3 className="text-lg font-semibold text-white mb-2">No bots yet</h3>
-          <p className="text-[#64748b] text-sm mb-4">Create your first bot — or let Claude recommend one based on live market conditions</p>
+          <h3 className="text-lg font-semibold text-white mb-2">No bots running yet</h3>
+          <p className="text-[#64748b] text-sm mb-1 max-w-sm mx-auto">
+            Click <strong>Analyze & Create Bot</strong>, select any Crypto, Commodity, or Forex asset, then hit <strong>Ask Claude</strong> for a news-enhanced recommendation.
+          </p>
+          <p className="text-[#475569] text-xs mb-4">Auto-execution available for Crypto · Advisory mode for Commodities & Forex</p>
           <button
             onClick={() => setShowForm(true)}
             className="px-5 py-2.5 bg-[#00ff88] text-black font-semibold rounded-xl hover:bg-[#00cc6a] transition-colors text-sm"
           >
-            + Create First Bot
+            + Get Started
           </button>
         </div>
       ) : (
         <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-white">Running Bots ({bots.length})</h2>
           {bots.map((bot) => (
             <div key={bot.id} className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-5 flex items-center gap-4">
-              <div className="text-2xl">
-                {STRATEGIES.find((s) => s.id === bot.strategy)?.icon ?? "🤖"}
-              </div>
+              <div className="text-2xl">{STRATEGIES.find(s => s.id === bot.strategy)?.icon ?? "🤖"}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="font-semibold text-white">{bot.name}</h3>
@@ -483,6 +679,10 @@ export default function BotsPage() {
           ))}
         </div>
       )}
+
+      <div className="p-4 rounded-xl bg-[#1a1f2e] text-xs text-[#475569] text-center">
+        ⚠️ AI recommendations combine technical indicators with news sentiment — not financial advice. News sourced from public RSS feeds (Yahoo Finance, Reuters, MarketWatch, CoinDesk). Always verify before executing any trade.
+      </div>
     </div>
   );
 }
