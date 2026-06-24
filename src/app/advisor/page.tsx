@@ -575,6 +575,153 @@ function ProposalCard({ proposal, onApprove, onDeny, loading }: {
   );
 }
 
+// ── How To Use Guide ───────────────────────────────────────────────────────────
+function HowToUsePanel() {
+  const [open, setOpen] = useState(false);
+
+  const examples = [
+    {
+      title: "Example 1 — BTC shows STRONG BUY",
+      badge: "STRONG BUY",
+      badgeColor: "#00ff88",
+      steps: [
+        { label: "Signal", text: "RSI hit 28 (deeply oversold) + MACD crossover bullish — strength 82%" },
+        { label: "Entry", text: "$104,200 — current market price", color: "text-white" },
+        { label: "Stop Loss", text: "$98,990 (–5%) — place this order immediately after entry", color: "text-red-400" },
+        { label: "Take Profit", text: "$115,200 (+10.5%) — exit when this is hit", color: "text-[#00ff88]" },
+        { label: "Risk/Reward", text: "2.6:1 — for every $1 you risk, you stand to gain $2.60", color: "text-[#a78bfa]" },
+        { label: "Action", text: "Click Approve & Execute (for Binance auto) or place manually on your exchange" },
+      ],
+    },
+    {
+      title: "Example 2 — Gold shows WATCH · ENTRY NEAR",
+      badge: "WATCH",
+      badgeColor: "#10b981",
+      steps: [
+        { label: "Signal", text: "HOLD signal but RSI is 38 — approaching oversold. Not yet a confirmed buy." },
+        { label: "What to do", text: "Click Refresh every few hours. When RSI drops below 40 AND trend turns BULLISH, expect a BUY signal." },
+        { label: "Prep your levels", text: "Entry near $3,280 · SL ~$3,214 · TP ~$3,425 (commodity: 2% SL / 4.4% TP)" },
+        { label: "Execution", text: "For Commodities — use your broker (MT4/MT5, IC Markets, etc.) to place the trade manually once BUY confirms" },
+      ],
+    },
+    {
+      title: "Example 3 — EUR/USD shows SELL",
+      badge: "SELL",
+      badgeColor: "#ef4444",
+      steps: [
+        { label: "Signal", text: "RSI 71 (overbought) + downtrend confirmed — bearish pressure building, strength 68%" },
+        { label: "Entry (short)", text: "1.0842 — sell / short at current price", color: "text-white" },
+        { label: "Stop Loss", text: "1.0929 (+0.8%) — place above entry to cap losses", color: "text-red-400" },
+        { label: "Take Profit", text: "1.0652 (–1.76%) — close position here for full profit", color: "text-[#00ff88]" },
+        { label: "Risk/Reward", text: "2.2:1 — standard forex risk ratio", color: "text-[#a78bfa]" },
+        { label: "Execution", text: "Forex is Advisory Mode — go to MetaTrader / your broker, open a short EUR/USD with these levels" },
+      ],
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-[#7c3aed]/30 bg-[#7c3aed]/[0.04] overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#7c3aed]/[0.04] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <BookOpen className="w-4 h-4 text-[#a78bfa]" />
+          <span className="text-sm font-semibold text-white">How to Use This System — 3 Worked Examples</span>
+          <span className="hidden sm:inline text-xs text-[#64748b]">Learn to read signals, levels, and when to act</span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-[#a78bfa] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5 space-y-4 border-t border-[#7c3aed]/20">
+              {/* Legend quick ref */}
+              <div className="pt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {[
+                  { color: "#00ff88", label: "STRONG BUY / BUY", desc: "Enter long now" },
+                  { color: "#10b981", label: "WATCH · Entry Near", desc: "BUY forming — prepare" },
+                  { color: "#f59e0b", label: "HOLD", desc: "No clear edge — wait" },
+                  { color: "#f97316", label: "WATCH · Exit Near", desc: "SELL forming — prepare" },
+                  { color: "#ef4444", label: "SELL", desc: "Exit / short now" },
+                ].map((s) => (
+                  <div key={s.label} className="bg-[#0a0d14] rounded-xl p-3 border border-white/5">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                      <span className="text-[10px] font-bold" style={{ color: s.color }}>{s.label}</span>
+                    </div>
+                    <p className="text-[10px] text-[#64748b]">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Worked examples */}
+              <div className="grid md:grid-cols-3 gap-4">
+                {examples.map((ex) => (
+                  <div key={ex.title} className="bg-[#0a0d14] rounded-2xl border border-white/5 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <span
+                        className="px-2 py-0.5 rounded-lg text-[10px] font-bold flex-shrink-0 mt-0.5"
+                        style={{ background: `${ex.badgeColor}20`, color: ex.badgeColor }}
+                      >
+                        {ex.badge}
+                      </span>
+                      <p className="text-xs font-semibold text-white leading-tight">{ex.title}</p>
+                    </div>
+                    <div className="space-y-2">
+                      {ex.steps.map((step, i) => (
+                        <div key={i} className="flex gap-2 text-xs">
+                          <span className="text-[#475569] flex-shrink-0 font-mono w-16 pt-0.5">{step.label}</span>
+                          <span className={`leading-relaxed ${step.color ?? "text-[#94a3b8]"}`}>{step.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Key concepts */}
+              <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                <div className="bg-[#0a0d14] rounded-xl p-3 border border-white/5">
+                  <p className="text-white font-semibold mb-1.5">📏 Trade Levels Explained</p>
+                  <p className="text-[#94a3b8] leading-relaxed">
+                    <span className="text-white font-medium">Entry</span> — price you open at.<br />
+                    <span className="text-red-400 font-medium">Stop Loss</span> — max loss, exit here automatically.<br />
+                    <span className="text-[#00ff88] font-medium">Take Profit</span> — your target, exit here for full gain.<br />
+                    <span className="text-[#a78bfa] font-medium">RR 2.2:1</span> — you risk 1 to gain 2.2.
+                  </p>
+                </div>
+                <div className="bg-[#0a0d14] rounded-xl p-3 border border-white/5">
+                  <p className="text-white font-semibold mb-1.5">📊 RSI Guide</p>
+                  <p className="text-[#94a3b8] leading-relaxed">
+                    <span className="text-[#00ff88] font-medium">Below 40</span> — oversold, buyers may enter soon.<br />
+                    <span className="text-[#f59e0b] font-medium">40–63</span> — neutral zone, no edge.<br />
+                    <span className="text-red-400 font-medium">Above 63</span> — overbought, sellers may push price down.<br />
+                    Best entries = oversold RSI in an uptrend.
+                  </p>
+                </div>
+                <div className="bg-[#0a0d14] rounded-xl p-3 border border-white/5">
+                  <p className="text-white font-semibold mb-1.5">🤖 Auto vs Advisory</p>
+                  <p className="text-[#94a3b8] leading-relaxed">
+                    <span className="text-[#00ff88] font-medium">Crypto</span> — AI proposal appears above. Approve = auto-executed via Binance.<br />
+                    <span className="text-[#f59e0b] font-medium">Commodity / Forex</span> — Advisory only. Take levels to your broker (MT4, IC Markets, etc.) and place manually.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function AdvisorPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -835,6 +982,9 @@ export default function AdvisorPage() {
           </button>
         </div>
       </div>
+
+      {/* ── HOW TO USE ─────────────────────────────────────────────────── */}
+      <HowToUsePanel />
 
       {/* ── TOP PICKS — 3-column investor cards ────────────────────────── */}
       {scanResults.length > 0 && (

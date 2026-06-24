@@ -90,6 +90,151 @@ function formatLevel(price: number, category: AssetCategory) {
   return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+function ExampleScenarios() {
+  const [open, setOpen] = useState(false);
+
+  const scenarios = [
+    {
+      icon: "🪙",
+      tag: "CRYPTO — AUTO",
+      tagColor: "#00ff88",
+      title: "DCA Bot on Bitcoin",
+      subtitle: "Set-and-forget accumulation",
+      steps: [
+        "Click + Analyze & Create Bot",
+        "Select 🪙 Crypto tab, choose Bitcoin (BTC)",
+        "Pick DCA strategy, set $50 per order, every 4 hours",
+        'Click "✦ Ask Claude" — AI checks news + RSI + MACD',
+        'If AI says BUY: click "Use This Config → Deploy Bot"',
+        "Bot runs automatically — buys BTC every 4h when conditions align",
+      ],
+      result: "Example AI output: BUY · Entry $104,200 · SL $99,500 · TP $115,200 · RR 2.6:1",
+      resultColor: "#00ff88",
+    },
+    {
+      icon: "⛏",
+      tag: "COMMODITY — ADVISORY",
+      tagColor: "#f59e0b",
+      title: "Gold Position Trade",
+      subtitle: "Manual execution on your broker",
+      steps: [
+        "Click + Analyze & Create Bot",
+        "Select ⛏ Commodity tab, choose Gold (GC=F)",
+        'Click "✦ Ask Claude" — AI reads Reuters + Yahoo Finance news on gold',
+        "Review: Action (BUY/SELL/HOLD), Entry, Stop Loss, Take Profit",
+        "Open MetaTrader 4/5 or IC Markets",
+        "Place a BUY order at the Entry price with SL and TP from the AI",
+      ],
+      result: "Example AI output: BUY Gold · Entry $3,280 · SL $3,214 · TP $3,424 · RR 2.2:1",
+      resultColor: "#f59e0b",
+    },
+    {
+      icon: "💱",
+      tag: "FOREX — ADVISORY",
+      tagColor: "#3b82f6",
+      title: "EUR/USD Short Trade",
+      subtitle: "News-enhanced forex signal",
+      steps: [
+        "Click + Analyze & Create Bot",
+        "Select 💱 Forex tab, choose EUR/USD",
+        'Click "✦ Ask Claude" — AI reads MarketWatch + Reuters macro news',
+        "If AI says SELL: it means EUR is weakening vs USD — go short",
+        "Copy Entry 1.0842 · SL 1.0929 · TP 1.0652 to your broker",
+        "On MT4: New Order → Sell, set SL and TP → OK",
+      ],
+      result: "Example AI output: SELL EUR/USD · Entry 1.0842 · SL 1.0929 · TP 1.0652 · RR 2.2:1",
+      resultColor: "#3b82f6",
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-[#1e2130] overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-4 bg-[#0f1117] hover:bg-[#131720] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-lg">📖</span>
+          <div className="text-left">
+            <p className="text-sm font-semibold text-white">How to Use — 3 Example Workflows</p>
+            <p className="text-xs text-[#64748b]">Crypto auto-bot · Gold advisory · Forex short — step by step</p>
+          </div>
+        </div>
+        <svg
+          className={`w-4 h-4 text-[#64748b] transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="border-t border-[#1e2130] p-5 bg-[#0a0d14] space-y-4">
+          <div className="grid md:grid-cols-3 gap-4">
+            {scenarios.map((s) => (
+              <div key={s.title} className="bg-[#0f1117] border border-white/5 rounded-2xl p-4 space-y-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xl">{s.icon}</span>
+                    <span
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold"
+                      style={{ background: `${s.tagColor}18`, color: s.tagColor }}
+                    >
+                      {s.tag}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-white">{s.title}</p>
+                  <p className="text-xs text-[#64748b]">{s.subtitle}</p>
+                </div>
+
+                <ol className="space-y-1.5">
+                  {s.steps.map((step, i) => (
+                    <li key={i} className="flex gap-2 text-xs">
+                      <span
+                        className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold mt-0.5"
+                        style={{ background: `${s.tagColor}20`, color: s.tagColor }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="text-[#94a3b8] leading-relaxed">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+
+                <div
+                  className="rounded-xl p-3 text-[10px] font-medium leading-relaxed"
+                  style={{ background: `${s.tagColor}0d`, color: s.tagColor, border: `1px solid ${s.tagColor}25` }}
+                >
+                  {s.result}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+            <div className="bg-[#0f1117] border border-white/5 rounded-xl p-3">
+              <p className="text-white font-semibold mb-1.5">What the AI levels mean</p>
+              <p className="text-[#94a3b8] leading-relaxed">
+                <span className="text-white">Entry</span> — open your trade here &nbsp;·&nbsp;
+                <span className="text-red-400">Stop Loss</span> — your maximum loss, place this order simultaneously &nbsp;·&nbsp;
+                <span className="text-[#00ff88]">Take Profit</span> — your target, auto-close here &nbsp;·&nbsp;
+                <span className="text-[#a78bfa]">RR 2.2:1</span> — you risk $1 to gain $2.20
+              </p>
+            </div>
+            <div className="bg-[#0f1117] border border-white/5 rounded-xl p-3">
+              <p className="text-white font-semibold mb-1.5">Crypto vs Commodity/Forex</p>
+              <p className="text-[#94a3b8] leading-relaxed">
+                <span className="text-[#00ff88]">Crypto</span> bots deploy directly to Binance — fully automated once approved. &nbsp;
+                <span className="text-[#f59e0b]">Commodity/Forex</span> is advisory — the AI gives you the exact levels, you enter them manually on MT4/MT5 or any CFD broker.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BotsPage() {
   const [bots, setBots]     = useState<Bot[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -224,6 +369,9 @@ export default function BotsPage() {
           + Analyze & Create Bot
         </button>
       </div>
+
+      {/* ── How to Use / Example Scenarios ──────────────────────────────── */}
+      <ExampleScenarios />
 
       {/* ── Strategy overview cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
