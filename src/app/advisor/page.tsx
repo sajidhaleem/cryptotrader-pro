@@ -6,7 +6,7 @@ import {
   Brain, TrendingUp, TrendingDown, CheckCircle, XCircle,
   RefreshCw, Clock, Zap, BarChart3, AlertTriangle, ChevronDown, ChevronUp,
   Trophy, Target, Activity, Sparkles, BookOpen, ArrowUpRight, ArrowDownRight,
-  Star,
+  Star, Eye, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { CRYPTO_ASSETS, COMMODITY_ASSETS, FOREX_ASSETS } from "@/lib/market-signals-types";
 
@@ -80,7 +80,105 @@ const SCAN_CRYPTO    = CRYPTO_ASSETS.slice(0, 8);
 const SCAN_COMMODITY = COMMODITY_ASSETS.slice(0, 5);
 const SCAN_FOREX     = FOREX_ASSETS.slice(0, 5);
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function calcLevels(price: number, signal: string, category: string) {
+  const slPct = category === "forex" ? 0.008 : category === "commodity" ? 0.02 : 0.045;
+  const tpPct = slPct * 2.2;
+
+  if (signal.includes("STRONG_BUY")) {
+    return { entry: price, sl: price * (1 - slPct * 1.1), tp: price * (1 + tpPct * 1.3), rr: 2.6, direction: "BUY" as const };
+  }
+  if (signal.includes("BUY")) {
+    return { entry: price, sl: price * (1 - slPct), tp: price * (1 + tpPct), rr: 2.2, direction: "BUY" as const };
+  }
+  if (signal.includes("STRONG_SELL")) {
+    return { entry: price, sl: price * (1 + slPct * 1.1), tp: price * (1 - tpPct * 1.3), rr: 2.6, direction: "SELL" as const };
+  }
+  if (signal.includes("SELL")) {
+    return { entry: price, sl: price * (1 + slPct), tp: price * (1 - tpPct), rr: 2.2, direction: "SELL" as const };
+  }
+  return null;
+}
+
+function rsiZone(rsi: number): "oversold" | "neutral" | "overbought" {
+  if (rsi < 40) return "oversold";
+  if (rsi > 63) return "overbought";
+  return "neutral";
+}
+
+function signalClass(r: QuickScan) {
+  if (r.signal.includes("BUY")) return "buy";
+  if (r.signal.includes("SELL")) return "sell";
+  const zone = rsiZone(r.rsi);
+  if (zone === "oversold") return "watch-buy";
+  if (zone === "overbought") return "watch-sell";
+  return "hold";
+}
+
+function formatPrice(r: QuickScan, price?: number) {
+  const p = price ?? r.price;
+  if (r.category === "forex") return p.toFixed(4);
+  if (r.category === "commodity") return `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function getBuyReason(r: QuickScan): string {
+  if (r.rsi < 30) return "Deeply oversold — RSI at extreme lows, bounce likely";
+  if (r.rsi < 40 && r.trend === "BULLISH") return "Oversold pullback in an uptrend — ideal entry zone";
+  if (r.rsi < 45) return "RSI entering oversold territory with bullish momentum building";
+  if (r.trend === "BULLISH") return "Strong uptrend confirmed — momentum favoring buyers";
+  return "Multiple bullish indicators aligned — buy signal generated";
+}
+
+function getSellReason(r: QuickScan): string {
+  if (r.rsi > 75) return "Extremely overbought — RSI at peak, reversal risk high";
+  if (r.rsi > 65 && r.trend === "BEARISH") return "Overbought in a downtrend — bearish momentum accelerating";
+  if (r.rsi > 60) return "RSI approaching overbought — consider taking profits";
+  if (r.trend === "BEARISH") return "Downtrend confirmed — bearish pressure dominating";
+  return "Multiple bearish signals aligned — sell / exit signal";
+}
+
+function getWatchReason(r: QuickScan): string {
+  const zone = rsiZone(r.rsi);
+  if (zone === "oversold") return `RSI ${r.rsi.toFixed(0)} — approaching oversold. Monitor for BUY confirmation`;
+  if (zone === "overbought") return `RSI ${r.rsi.toFixed(0)} — overbought territory. Watch for exit signal`;
+  return `Mixed signals — RSI ${r.rsi.toFixed(0)} neutral. Wait for clearer direction`;
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
+function CategoryBadge({ category }: { category: QuickScan["category"] }) {
+  const map = {
+    crypto:    { label: "CRYPTO",    color: "#7c3aed" },
+    commodity: { label: "COMMODITY", color: "#f59e0b" },
+    forex:     { label: "FOREX",     color: "#3b82f6" },
+  };
+  const { label, color } = map[category];
+  return (
+    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
+      style={{ background: `${color}20`, color }}>
+      {label}
+    </span>
+  );
+}
+
+function RsiBar({ rsi }: { rsi: number }) {
+  const zone = rsiZone(rsi);
+  const color = zone === "oversold" ? "#00ff88" : zone === "overbought" ? "#ef4444" : "#f59e0b";
+  return (
+    <div className="relative h-2 bg-[#1e2130] rounded-full overflow-hidden w-24">
+      <div className="absolute inset-0 flex">
+        <div className="w-[40%] bg-[#00ff88]/10 rounded-l-full" />
+        <div className="w-[23%] bg-[#f59e0b]/10" />
+        <div className="w-[37%] bg-[#ef4444]/10 rounded-r-full" />
+      </div>
+      <div
+        className="absolute top-0 h-full w-1 rounded-full -translate-x-0.5"
+        style={{ left: `${rsi}%`, background: color }}
+      />
+    </div>
+  );
+}
+
 function ConfidenceBar({ confidence }: { confidence: number }) {
   const color = confidence >= 75 ? "#00ff88" : confidence >= 55 ? "#f59e0b" : "#ef4444";
   return (
@@ -117,6 +215,219 @@ function FactorRow({ factor }: { factor: Factor }) {
         <div className="h-full rounded-full" style={{ width: `${barWidth}%`, background: positive ? "#00ff88" : "#ef4444" }} />
       </div>
       <p className="text-xs text-[#64748b] leading-relaxed">{factor.explanation}</p>
+    </div>
+  );
+}
+
+function TopPickCard({ scan, role }: { scan: QuickScan; role: "buy" | "sell" | "watch" }) {
+  const isBuy  = role === "buy";
+  const isSell = role === "sell";
+  const levels = calcLevels(scan.price, scan.signal, scan.category);
+  const color  = isBuy ? "#00ff88" : isSell ? "#ef4444" : "#f59e0b";
+  const Icon   = isBuy ? ArrowUpRight : isSell ? ArrowDownRight : Eye;
+  const label  = isBuy ? "Best Buy" : isSell ? "Best Sell" : "Watch";
+
+  return (
+    <div
+      className="rounded-2xl border p-4 flex flex-col gap-3"
+      style={{ borderColor: `${color}25`, background: `${color}05` }}
+    >
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4" style={{ color }} />
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{label}</span>
+        <CategoryBadge category={scan.category} />
+      </div>
+
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-lg font-black text-white">{scan.label}</p>
+          <p className="text-sm font-semibold" style={{ color }}>{formatPrice(scan)}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-black" style={{ color }}>{scan.strength}%</p>
+          <p className="text-[10px] text-[#64748b]">strength</p>
+        </div>
+      </div>
+
+      <p className="text-xs text-[#94a3b8] leading-relaxed">
+        {isBuy ? getBuyReason(scan) : isSell ? getSellReason(scan) : getWatchReason(scan)}
+      </p>
+
+      {levels ? (
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Entry", value: formatPrice(scan, levels.entry), color: "text-white" },
+            { label: "Stop Loss", value: formatPrice(scan, levels.sl), color: "text-red-400" },
+            { label: "Take Profit", value: formatPrice(scan, levels.tp), color: "text-[#00ff88]" },
+          ].map((item) => (
+            <div key={item.label} className="bg-[#0f1117] rounded-xl p-2.5 text-center border border-white/5">
+              <p className="text-[10px] text-[#64748b] mb-0.5">{item.label}</p>
+              <p className={`text-xs font-bold ${item.color}`}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-[#0f1117] rounded-xl p-2.5 border border-white/5">
+          <p className="text-xs text-[#64748b] text-center">No levels yet — signal too mixed</p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-4 text-xs text-[#64748b]">
+        {levels && <span>RR: <span className="text-white font-semibold">{levels.rr}:1</span></span>}
+        <span>RSI: <span className="font-semibold" style={{ color: rsiZone(scan.rsi) === "oversold" ? "#00ff88" : rsiZone(scan.rsi) === "overbought" ? "#ef4444" : "#f59e0b" }}>{scan.rsi.toFixed(0)}</span></span>
+        <span>Trend: <span className="text-white font-semibold">{scan.trend}</span></span>
+      </div>
+    </div>
+  );
+}
+
+function ScanRow({ r, idx }: { r: QuickScan; idx: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const levels = calcLevels(r.price, r.signal, r.category);
+  const cls = signalClass(r);
+  const isBuy  = cls === "buy";
+  const isSell = cls === "sell";
+  const isWatchBuy  = cls === "watch-buy";
+  const isWatchSell = cls === "watch-sell";
+
+  const sigColor = isBuy ? "#00ff88" : isSell ? "#ef4444" : isWatchBuy ? "#10b981" : isWatchSell ? "#f97316" : "#f59e0b";
+  const sigLabel =
+    isBuy ? r.signal.replace("STRONG_BUY", "STRONG BUY").replace(/_/g, " ")
+    : isSell ? r.signal.replace("STRONG_SELL", "STRONG SELL").replace(/_/g, " ")
+    : isWatchBuy  ? "WATCH · ENTRY NEAR"
+    : isWatchSell ? "WATCH · EXIT NEAR"
+    : "HOLD · WAIT";
+
+  const reason = isBuy ? getBuyReason(r) : isSell ? getSellReason(r) : getWatchReason(r);
+
+  return (
+    <div className="border-b border-[#1e2130] last:border-0">
+      <div
+        className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-colors cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="w-5 text-xs text-[#475569] font-mono flex-shrink-0">{idx + 1}</span>
+
+        {/* Asset */}
+        <div className="w-32 flex-shrink-0">
+          <p className="text-sm font-bold text-white leading-tight">{r.label}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <CategoryBadge category={r.category} />
+            <span className="text-xs text-[#64748b]">{formatPrice(r)}</span>
+          </div>
+        </div>
+
+        {/* Signal badge */}
+        <div className="w-36 flex-shrink-0">
+          <span className="text-xs font-bold" style={{ color: sigColor }}>{sigLabel}</span>
+        </div>
+
+        {/* Levels — hide on small screens conceptually */}
+        <div className="hidden md:flex flex-1 items-center gap-4 text-xs">
+          {levels ? (
+            <>
+              <span className="text-[#64748b]">SL <span className="font-semibold text-red-400">{formatPrice(r, levels.sl)}</span></span>
+              <span className="text-[#64748b]">TP <span className="font-semibold text-[#00ff88]">{formatPrice(r, levels.tp)}</span></span>
+              <span className="text-[#64748b]">RR <span className="font-semibold text-white">{levels.rr}:1</span></span>
+            </>
+          ) : (
+            <span className="text-[#475569]">Awaiting signal</span>
+          )}
+        </div>
+
+        {/* RSI + bar */}
+        <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+          <RsiBar rsi={r.rsi} />
+          <span className="text-xs text-[#64748b] w-10">RSI {r.rsi.toFixed(0)}</span>
+        </div>
+
+        {/* Strength */}
+        <div className="flex items-center gap-2 flex-shrink-0 w-12">
+          <span className="text-xs font-semibold text-white">{r.strength}%</span>
+        </div>
+
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-[#475569] flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 bg-[#0a0d14]">
+              {/* Why */}
+              <div className="flex items-start gap-2 mb-4 pt-3">
+                <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: sigColor }} />
+                <p className="text-xs text-[#94a3b8] leading-relaxed">{reason}</p>
+              </div>
+
+              {/* Trade levels detail */}
+              {levels ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  {[
+                    { label: "Entry Price", value: formatPrice(r, levels.entry), color: "text-white", icon: "→" },
+                    { label: "Stop Loss", value: formatPrice(r, levels.sl), color: "text-red-400", icon: "↓" },
+                    { label: "Take Profit", value: formatPrice(r, levels.tp), color: "text-[#00ff88]", icon: "↑" },
+                    { label: "Risk / Reward", value: `${levels.rr}:1`, color: "text-[#a78bfa]", icon: "⚖" },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-[#0f1117] border border-white/5 rounded-xl p-3">
+                      <p className="text-[10px] text-[#64748b] mb-1">{item.icon} {item.label}</p>
+                      <p className={`text-sm font-bold ${item.color}`}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-[#0f1117] border border-white/5 rounded-xl mb-4">
+                  <p className="text-xs text-[#64748b]">
+                    Signal is HOLD — no trade levels generated. Wait for RSI to reach &lt;40 (buy) or &gt;65 (sell) with momentum confirmation.
+                  </p>
+                </div>
+              )}
+
+              {/* RSI visual */}
+              <div className="mb-3">
+                <div className="flex justify-between text-[10px] text-[#475569] mb-1">
+                  <span>Oversold (&lt;40)</span>
+                  <span>Neutral</span>
+                  <span>Overbought (&gt;63)</span>
+                </div>
+                <div className="relative h-3 bg-[#1e2130] rounded-full overflow-hidden">
+                  <div className="absolute inset-0 flex">
+                    <div className="w-[40%] bg-[#00ff88]/15 rounded-l-full" />
+                    <div className="w-[23%] bg-[#f59e0b]/10" />
+                    <div className="w-[37%] bg-[#ef4444]/15 rounded-r-full" />
+                  </div>
+                  <motion.div
+                    initial={{ left: "50%" }}
+                    animate={{ left: `${r.rsi}%` }}
+                    transition={{ duration: 0.6 }}
+                    className="absolute top-0.5 bottom-0.5 w-2 rounded-full -translate-x-1"
+                    style={{ background: rsiZone(r.rsi) === "oversold" ? "#00ff88" : rsiZone(r.rsi) === "overbought" ? "#ef4444" : "#f59e0b" }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-[#475569] mt-1">
+                  <span>0</span>
+                  <span className="font-semibold" style={{ color: sigColor }}>RSI: {r.rsi.toFixed(1)}</span>
+                  <span>100</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs text-[#64748b]">
+                <span>Trend: <span className="font-semibold" style={{ color: r.trend === "BULLISH" ? "#00ff88" : r.trend === "BEARISH" ? "#ef4444" : "#f59e0b" }}>{r.trend}</span></span>
+                <span>Signal strength: <span className="font-semibold text-white">{r.strength}%</span></span>
+                {(isWatchBuy || isWatchSell) && (
+                  <span className="text-[#f59e0b]">⚠ Setup forming — not yet confirmed</span>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -264,21 +575,6 @@ function ProposalCard({ proposal, onApprove, onDeny, loading }: {
   );
 }
 
-function CategoryBadge({ category }: { category: QuickScan["category"] }) {
-  const map = {
-    crypto:    { label: "Crypto",    color: "#7c3aed" },
-    commodity: { label: "Commodity", color: "#f59e0b" },
-    forex:     { label: "Forex",     color: "#3b82f6" },
-  };
-  const { label, color } = map[category];
-  return (
-    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
-      style={{ background: `${color}20`, color }}>
-      {label}
-    </span>
-  );
-}
-
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function AdvisorPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -390,10 +686,14 @@ export default function AdvisorPage() {
 
     const pushResult = (r: QuickScan) => {
       results.push(r);
-      setScanResults([...results].sort((a, b) => b.strength - a.strength));
+      setScanResults([...results].sort((a, b) => {
+        const scoreA = a.signal.includes("BUY") ? 3 : a.signal.includes("SELL") ? 2 : 1;
+        const scoreB = b.signal.includes("BUY") ? 3 : b.signal.includes("SELL") ? 2 : 1;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        return b.strength - a.strength;
+      }));
     };
 
-    // Crypto — via /api/signals (CoinGecko, 4H interval)
     for (const asset of SCAN_CRYPTO) {
       try {
         const res = await fetch(`/api/signals?symbol=${asset.symbol}&interval=4h`);
@@ -401,20 +701,15 @@ export default function AdvisorPage() {
         const d = await res.json();
         if (d?.signal) {
           pushResult({
-            symbol: asset.symbol,
-            label: asset.label,
-            price: d.price,
-            signal: d.signal.signal,
-            strength: d.signal.strength,
-            trend: d.signal.trend,
-            rsi: d.signal.rsi,
-            category: "crypto",
+            symbol: asset.symbol, label: asset.label,
+            price: d.price, signal: d.signal.signal,
+            strength: d.signal.strength, trend: d.signal.trend,
+            rsi: d.signal.rsi, category: "crypto",
           });
         }
       } catch { /* skip */ }
     }
 
-    // Commodities — via /api/market-signals (Yahoo Finance, daily interval)
     for (const asset of SCAN_COMMODITY) {
       try {
         const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=commodity&interval=1d`);
@@ -422,20 +717,15 @@ export default function AdvisorPage() {
         const d = await res.json();
         if (d?.signal) {
           pushResult({
-            symbol: asset.symbol,
-            label: asset.label,
-            price: d.price,
-            signal: d.signal.signal,
-            strength: d.signal.strength,
-            trend: d.signal.trend,
-            rsi: d.signal.rsi,
-            category: "commodity",
+            symbol: asset.symbol, label: asset.label,
+            price: d.price, signal: d.signal.signal,
+            strength: d.signal.strength, trend: d.signal.trend,
+            rsi: d.signal.rsi, category: "commodity",
           });
         }
       } catch { /* skip */ }
     }
 
-    // Forex — via /api/market-signals (Yahoo Finance, daily interval)
     for (const asset of SCAN_FOREX) {
       try {
         const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=forex&interval=1d`);
@@ -443,14 +733,10 @@ export default function AdvisorPage() {
         const d = await res.json();
         if (d?.signal) {
           pushResult({
-            symbol: asset.symbol,
-            label: asset.label,
-            price: d.price,
-            signal: d.signal.signal,
-            strength: d.signal.strength,
-            trend: d.signal.trend,
-            rsi: d.signal.rsi,
-            category: "forex",
+            symbol: asset.symbol, label: asset.label,
+            price: d.price, signal: d.signal.signal,
+            strength: d.signal.strength, trend: d.signal.trend,
+            rsi: d.signal.rsi, category: "forex",
           });
         }
       } catch { /* skip */ }
@@ -468,29 +754,45 @@ export default function AdvisorPage() {
 
   useEffect(() => { loadMarketScan(); }, [loadMarketScan]);
 
-  // Derive verdicts across all asset classes
-  const bullish = scanResults.filter(r => r.signal.includes("BUY")).length;
-  const bearish = scanResults.filter(r => r.signal.includes("SELL")).length;
+  // Derived data
+  const buySignals  = scanResults.filter(r => r.signal.includes("BUY"));
+  const sellSignals = scanResults.filter(r => r.signal.includes("SELL"));
+  const holdSignals = scanResults.filter(r => !r.signal.includes("BUY") && !r.signal.includes("SELL"));
+  const watchBuy    = holdSignals.filter(r => rsiZone(r.rsi) === "oversold");
+  const watchSell   = holdSignals.filter(r => rsiZone(r.rsi) === "overbought");
+
+  const topBuy  = buySignals.sort((a, b) => b.strength - a.strength)[0];
+  const topSell = sellSignals.sort((a, b) => b.strength - a.strength)[0];
+  const topWatch = watchBuy[0] ?? watchSell[0] ?? holdSignals[0];
+
+  const bullish = buySignals.length;
+  const bearish = sellSignals.length;
   const marketMood = scanResults.length === 0 ? null
     : bullish > bearish + 2 ? "bullish"
     : bearish > bullish + 2 ? "bearish"
     : "mixed";
 
-  const topBuy  = [...scanResults].filter(r => r.signal.includes("BUY")).sort((a, b) => b.strength - a.strength)[0];
-  const topSell = [...scanResults].filter(r => r.signal.includes("SELL")).sort((a, b) => b.strength - a.strength)[0];
+  const filteredResults = (() => {
+    const base = scanFilter === "all" ? scanResults : scanResults.filter(r => r.category === scanFilter);
+    const buys  = base.filter(r => r.signal.includes("BUY")).sort((a, b) => b.strength - a.strength);
+    const sells = base.filter(r => r.signal.includes("SELL")).sort((a, b) => b.strength - a.strength);
+    const holds = base.filter(r => !r.signal.includes("BUY") && !r.signal.includes("SELL")).sort((a, b) => {
+      const za = rsiZone(a.rsi) === "neutral" ? 0 : 1;
+      const zb = rsiZone(b.rsi) === "neutral" ? 0 : 1;
+      return zb - za || b.strength - a.strength;
+    });
+    return [...buys, ...sells, ...holds];
+  })();
 
-  const filteredResults = scanFilter === "all"
-    ? scanResults
-    : scanResults.filter(r => r.category === scanFilter);
-
-  const formatPrice = (r: QuickScan) => {
-    if (r.category === "crypto") return `$${r.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    if (r.category === "commodity") return `$${r.price.toFixed(2)}`;
-    return r.price.toFixed(4);
+  const tabCounts = {
+    all: scanResults.length,
+    crypto: scanResults.filter(r => r.category === "crypto").length,
+    commodity: scanResults.filter(r => r.category === "commodity").length,
+    forex: scanResults.filter(r => r.category === "forex").length,
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
 
       {/* Toast */}
       <AnimatePresence>
@@ -511,19 +813,15 @@ export default function AdvisorPage() {
 
       {/* Header */}
       <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-[#7c3aed]/20 border border-[#7c3aed]/30 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-[#a78bfa]" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-white">AI Financial Advisor</h1>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
-                <span className="text-xs text-[#64748b]">
-                  Scanning Crypto · Commodities · Forex
-                </span>
-              </div>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#7c3aed]/20 border border-[#7c3aed]/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-[#a78bfa]" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-white">AI Financial Advisor</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
+              <span className="text-xs text-[#64748b]">Scanning Crypto · Commodities · Forex — with Entry / SL / TP</span>
             </div>
           </div>
         </div>
@@ -538,93 +836,38 @@ export default function AdvisorPage() {
         </div>
       </div>
 
-      {/* Final Verdict — top BUY and top SELL across all asset classes */}
-      {(topBuy || topSell) && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-[#7c3aed]/30 bg-[#7c3aed]/[0.04] overflow-hidden"
-        >
-          <div className="flex items-center gap-2 px-5 py-3 border-b border-[#7c3aed]/20">
+      {/* ── TOP PICKS — 3-column investor cards ────────────────────────── */}
+      {scanResults.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="flex items-center gap-2 mb-3">
             <Star className="w-4 h-4 text-[#a78bfa]" />
-            <span className="text-sm font-bold text-white">Final Verdict — Best Opportunities Right Now</span>
+            <h2 className="text-sm font-bold text-white">Top Picks Right Now</h2>
             <span className="text-xs text-[#64748b] ml-auto">{scanResults.length} assets scanned</span>
           </div>
-          <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/5">
-            {/* Best BUY */}
-            <div className="p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <ArrowUpRight className="w-4 h-4 text-[#00ff88]" />
-                <span className="text-xs font-bold text-[#00ff88] uppercase tracking-wider">Best Buy</span>
+          <div className="grid md:grid-cols-3 gap-4">
+            {topBuy   ? <TopPickCard scan={topBuy}   role="buy"   /> : (
+              <div className="rounded-2xl border border-[#1e2130] p-4 flex flex-col items-center justify-center gap-2 min-h-[160px]">
+                <ShieldCheck className="w-6 h-6 text-[#1e2130]" />
+                <p className="text-xs text-[#475569] text-center">No buy signals yet — market scanning</p>
               </div>
-              {topBuy ? (
-                <>
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="text-xl font-black text-white">{topBuy.label}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <CategoryBadge category={topBuy.category} />
-                        <span className="text-xs text-[#64748b]">{formatPrice(topBuy)}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-black text-[#00ff88]">{topBuy.strength}%</p>
-                      <p className="text-[10px] text-[#64748b]">signal strength</p>
-                    </div>
-                  </div>
-                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
-                    <div className="h-full rounded-full bg-[#00ff88]" style={{ width: `${topBuy.strength}%` }} />
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-[#64748b]">
-                    <span className="font-semibold text-[#00ff88]">{topBuy.signal.replace("_", " ")}</span>
-                    <span>RSI {topBuy.rsi.toFixed(0)}</span>
-                    <span>Trend {topBuy.trend}</span>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-[#64748b]">No buy signals detected yet — scan in progress.</p>
-              )}
-            </div>
-
-            {/* Best SELL */}
-            <div className="p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <ArrowDownRight className="w-4 h-4 text-red-400" />
-                <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Best Sell / Short</span>
+            )}
+            {topWatch ? <TopPickCard scan={topWatch} role="watch" /> : (
+              <div className="rounded-2xl border border-[#1e2130] p-4 flex flex-col items-center justify-center gap-2 min-h-[160px]">
+                <Eye className="w-6 h-6 text-[#1e2130]" />
+                <p className="text-xs text-[#475569] text-center">Nothing to watch</p>
               </div>
-              {topSell ? (
-                <>
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="text-xl font-black text-white">{topSell.label}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <CategoryBadge category={topSell.category} />
-                        <span className="text-xs text-[#64748b]">{formatPrice(topSell)}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-black text-red-400">{topSell.strength}%</p>
-                      <p className="text-[10px] text-[#64748b]">signal strength</p>
-                    </div>
-                  </div>
-                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
-                    <div className="h-full rounded-full bg-red-400" style={{ width: `${topSell.strength}%` }} />
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-[#64748b]">
-                    <span className="font-semibold text-red-400">{topSell.signal.replace("_", " ")}</span>
-                    <span>RSI {topSell.rsi.toFixed(0)}</span>
-                    <span>Trend {topSell.trend}</span>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-[#64748b]">No sell signals detected yet — scan in progress.</p>
-              )}
-            </div>
+            )}
+            {topSell  ? <TopPickCard scan={topSell}  role="sell"  /> : (
+              <div className="rounded-2xl border border-[#1e2130] p-4 flex flex-col items-center justify-center gap-2 min-h-[160px]">
+                <ShieldAlert className="w-6 h-6 text-[#1e2130]" />
+                <p className="text-xs text-[#475569] text-center">No clear sell signals</p>
+              </div>
+            )}
           </div>
         </motion.div>
       )}
 
-      {/* AI Market Briefing */}
+      {/* ── MARKET MOOD BRIEFING ───────────────────────────────────────── */}
       {marketMood && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -643,24 +886,22 @@ export default function AdvisorPage() {
           <div>
             <p className="text-sm font-semibold text-white mb-0.5">
               {marketMood === "bullish"
-                ? `Markets leaning bullish across Crypto, Commodities & Forex — ${bullish}/${scanResults.length} assets showing buy signals`
+                ? `${bullish} of ${scanResults.length} assets showing BUY signals — broad bullish momentum`
                 : marketMood === "bearish"
-                ? `Markets leaning bearish across all classes — ${bearish}/${scanResults.length} assets showing sell signals`
-                : `Mixed signals — ${bullish} bullish, ${bearish} bearish across ${scanResults.length} assets`
+                ? `${bearish} of ${scanResults.length} assets showing SELL signals — broad bearish pressure`
+                : `Mixed market — ${bullish} buys, ${bearish} sells, ${holdSignals.length} holds across ${scanResults.length} assets`
               }
             </p>
-            {topBuy && (
-              <p className="text-xs text-[#94a3b8]">
-                Strongest buy: <span className="font-semibold text-white">{topBuy.label}</span> ({topBuy.category}) —{" "}
-                {topBuy.signal.replace("_", " ")} at {topBuy.strength}% strength
-                {topSell && <> · Strongest sell: <span className="font-semibold text-white">{topSell.label}</span> at {topSell.strength}%</>}
-              </p>
-            )}
+            <p className="text-xs text-[#94a3b8]">
+              {watchBuy.length > 0 && `${watchBuy.length} asset${watchBuy.length > 1 ? "s" : ""} approaching oversold (potential entry soon). `}
+              {watchSell.length > 0 && `${watchSell.length} asset${watchSell.length > 1 ? "s" : ""} overbought (potential exit soon). `}
+              Click any row below to see entry, stop-loss, and take-profit levels.
+            </p>
           </div>
         </motion.div>
       )}
 
-      {/* Performance Panel */}
+      {/* ── PERFORMANCE ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           {
@@ -703,7 +944,7 @@ export default function AdvisorPage() {
         ))}
       </div>
 
-      {/* Best indicators */}
+      {/* Signal Intelligence */}
       {perf?.signalAccuracy && perf.signalAccuracy.length > 0 && (
         <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -723,20 +964,17 @@ export default function AdvisorPage() {
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-[#475569] mt-3">
-            The AI automatically increases weight on high-accuracy indicators for your next proposals.
-          </p>
         </div>
       )}
 
-      {/* Scan controls */}
+      {/* Scan Controls */}
       <div className="flex items-center justify-between p-4 rounded-2xl border border-white/8 bg-white/[0.02]">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-[#94a3b8]">
             {proposals.length} pending proposal{proposals.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[#1e2130]">|</span>
-          <span className="text-xs text-[#64748b]">Auto-scans every 30 min</span>
+          <span className="hidden sm:inline text-[#1e2130]">|</span>
+          <span className="hidden sm:inline text-xs text-[#64748b]">Auto-scans every 30 min</span>
         </div>
         <button
           onClick={generate}
@@ -760,7 +998,7 @@ export default function AdvisorPage() {
               <Brain className="w-10 h-10 text-[#1e2130] mb-3" />
               <p className="text-white font-semibold mb-1">No active proposals</p>
               <p className="text-[#64748b] text-sm max-w-xs">
-                No setup clears the 45%+ confidence bar right now. See the Market Overview below for live BUY/SELL signals, or hit Scan Now to run a fresh analysis.
+                No setup clears the confidence bar right now. See the Investment Screener below, or hit Scan Now for a fresh analysis.
               </p>
             </motion.div>
           )}
@@ -776,12 +1014,16 @@ export default function AdvisorPage() {
         </AnimatePresence>
       </div>
 
-      {/* Market Overview — all 3 asset classes */}
+      {/* ── INVESTMENT SCREENER ─────────────────────────────────────────── */}
       <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2130]">
           <div>
-            <h3 className="font-semibold text-white text-sm">Market Overview</h3>
-            <p className="text-[#64748b] text-xs mt-0.5">Live signals across Crypto, Commodities & Forex — ranked by strength</p>
+            <h3 className="font-semibold text-white text-sm">Investment Screener</h3>
+            <p className="text-[#64748b] text-xs mt-0.5">
+              {buySignals.length > 0
+                ? `${buySignals.length} BUY · ${sellSignals.length} SELL · ${holdSignals.length} HOLD — click any row for Entry / SL / TP`
+                : "Live signals across Crypto, Commodities & Forex — click any row for details"}
+            </p>
           </div>
           <button
             onClick={loadMarketScan}
@@ -795,71 +1037,74 @@ export default function AdvisorPage() {
 
         {/* Filter tabs */}
         <div className="flex gap-0 border-b border-[#1e2130]">
-          {(["all", "crypto", "commodity", "forex"] as ScanFilter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setScanFilter(f)}
-              className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${
-                scanFilter === f
-                  ? "text-white border-b-2 border-[#7c3aed]"
-                  : "text-[#64748b] hover:text-white"
-              }`}
-            >
-              {f === "all" ? `All (${scanResults.length})` : f === "crypto" ? `Crypto (${scanResults.filter(r => r.category === "crypto").length})` : f === "commodity" ? `Commodities (${scanResults.filter(r => r.category === "commodity").length})` : `Forex (${scanResults.filter(r => r.category === "forex").length})`}
-            </button>
-          ))}
+          {(["all", "crypto", "commodity", "forex"] as ScanFilter[]).map((f) => {
+            const label = f === "all" ? `All (${tabCounts.all})`
+              : f === "crypto" ? `Crypto (${tabCounts.crypto})`
+              : f === "commodity" ? `Commodities (${tabCounts.commodity})`
+              : `Forex (${tabCounts.forex})`;
+            return (
+              <button
+                key={f}
+                onClick={() => setScanFilter(f)}
+                className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${
+                  scanFilter === f ? "text-white border-b-2 border-[#7c3aed]" : "text-[#64748b] hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
-        {scanLoading && scanResults.length === 0 ? (
-          <div className="py-8 text-center text-[#64748b] text-sm">Scanning Crypto, Commodities & Forex…</div>
+        {/* Legend */}
+        <div className="flex items-center gap-4 px-5 py-2 border-b border-[#1e2130] bg-white/[0.01]">
+          <div className="flex items-center gap-1.5 text-[10px] text-[#64748b]">
+            <span className="w-2 h-2 rounded-full bg-[#00ff88]" /> BUY
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-[#64748b]">
+            <span className="w-2 h-2 rounded-full bg-[#10b981]" /> WATCH · Entry Near
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-[#64748b]">
+            <span className="w-2 h-2 rounded-full bg-[#f59e0b]" /> HOLD
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-[#64748b]">
+            <span className="w-2 h-2 rounded-full bg-[#f97316]" /> WATCH · Exit Near
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-[#64748b]">
+            <span className="w-2 h-2 rounded-full bg-[#ef4444]" /> SELL
+          </div>
+        </div>
+
+        {/* Column headers */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[#1e2130] bg-white/[0.01]">
+          <span className="w-5 text-[10px] text-[#475569]">#</span>
+          <span className="w-32 text-[10px] text-[#475569] uppercase tracking-wider">Asset</span>
+          <span className="w-36 text-[10px] text-[#475569] uppercase tracking-wider">Signal</span>
+          <span className="hidden md:block flex-1 text-[10px] text-[#475569] uppercase tracking-wider">Stop Loss / Take Profit / RR</span>
+          <span className="hidden sm:block text-[10px] text-[#475569] uppercase tracking-wider w-36">RSI Zone</span>
+          <span className="text-[10px] text-[#475569] uppercase tracking-wider w-12">Str</span>
+          <span className="w-4" />
+        </div>
+
+        {scanLoading && filteredResults.length === 0 ? (
+          <div className="py-10 text-center text-[#64748b] text-sm">
+            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#475569]" />
+            Scanning Crypto, Commodities & Forex…
+          </div>
+        ) : filteredResults.length === 0 ? (
+          <div className="py-10 text-center text-[#64748b] text-sm">
+            {scanResults.length === 0 ? "Click Refresh to load live signals" : `No ${scanFilter} results`}
+          </div>
         ) : (
-          <div className="divide-y divide-[#1e2130]">
-            {filteredResults.map((r, idx) => {
-              const isBuy = r.signal.includes("BUY");
-              const isSell = r.signal.includes("SELL");
-              const sigColor = isBuy ? "#00ff88" : isSell ? "#ef4444" : "#f59e0b";
-              return (
-                <div key={r.symbol} className="flex items-center gap-4 px-5 py-3 hover:bg-white/[0.02] transition-colors">
-                  <div className="w-5 flex-shrink-0 text-xs text-[#475569] font-mono">{idx + 1}</div>
-                  <div className="w-28 flex-shrink-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <p className="text-sm font-bold text-white">{r.label}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <CategoryBadge category={r.category} />
-                      <p className="text-xs text-[#64748b]">{formatPrice(r)}</p>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold" style={{ color: sigColor }}>{r.signal.replace("_", " ")}</span>
-                      <span className="text-xs text-[#64748b]">RSI {r.rsi.toFixed(0)} · {r.trend}</span>
-                    </div>
-                    <div className="h-1.5 bg-[#1e2130] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${r.strength}%`, background: sigColor }} />
-                    </div>
-                  </div>
-                  <div className="w-10 text-right flex-shrink-0 flex flex-col items-end gap-0.5">
-                    <span className="text-xs font-semibold text-white">{r.strength}%</span>
-                    {isBuy ? (
-                      <ArrowUpRight className="w-3 h-3 text-[#00ff88]" />
-                    ) : isSell ? (
-                      <ArrowDownRight className="w-3 h-3 text-red-400" />
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-            {filteredResults.length === 0 && !scanLoading && (
-              <div className="py-8 text-center text-[#64748b] text-sm">
-                {scanResults.length === 0 ? "Click Refresh to load live signals" : `No ${scanFilter} results yet`}
-              </div>
-            )}
+          <div>
+            {filteredResults.map((r, idx) => (
+              <ScanRow key={r.symbol} r={r} idx={idx} />
+            ))}
           </div>
         )}
       </div>
 
-      {/* Recent trade history */}
+      {/* Recent Trades */}
       {perf?.recentTrades && perf.recentTrades.length > 0 && (
         <div className="bg-[#0f1117] border border-[#1e2130] rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[#1e2130]">
@@ -887,9 +1132,7 @@ export default function AdvisorPage() {
                     : t.outcome === "LOSS" ? "text-red-400"
                     : t.outcome === "BREAKEVEN" ? "text-[#f59e0b]"
                     : "text-[#475569]"
-                  }`}>
-                    {t.outcome ?? "Pending"}
-                  </p>
+                  }`}>{t.outcome ?? "Pending"}</p>
                   {t.pnl != null && (
                     <p className="text-xs text-[#64748b]">{t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)}</p>
                   )}
@@ -901,7 +1144,7 @@ export default function AdvisorPage() {
       )}
 
       <div className="p-4 rounded-xl bg-[#1a1f2e] text-xs text-[#475569] text-center">
-        ⚠️ AI analysis is based on technical indicators and market sentiment — not financial advice. Always apply your own judgement before executing any trade.
+        ⚠️ AI analysis is based on technical indicators — not financial advice. Stop-loss and take-profit levels are algorithmically estimated. Always apply your own judgement before executing any trade.
       </div>
     </div>
   );
