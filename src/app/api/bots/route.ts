@@ -36,21 +36,17 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const userId = await getOwnerId();
-  const { id, status } = await req.json();
+  const body = await req.json() as { id: string; status?: string; config?: Record<string, unknown> };
+  const { id, status, config } = body;
 
-  const bot = await prisma.bot.findFirst({
-    where: { id, userId },
-  });
+  const bot = await prisma.bot.findFirst({ where: { id, userId } });
+  if (!bot) return Response.json({ error: "Bot not found" }, { status: 404 });
 
-  if (!bot) {
-    return Response.json({ error: "Bot not found" }, { status: 404 });
-  }
+  const updateData: Record<string, unknown> = {};
+  if (status) updateData.status = status;
+  if (config) updateData.config = { ...(bot.config as object ?? {}), ...config };
 
-  const updated = await prisma.bot.update({
-    where: { id },
-    data: { status },
-  });
-
+  const updated = await prisma.bot.update({ where: { id }, data: updateData });
   return Response.json({ bot: updated });
 }
 

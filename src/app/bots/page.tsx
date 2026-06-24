@@ -90,6 +90,207 @@ function formatLevel(price: number, category: AssetCategory) {
   return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+function BotCard({ bot, onToggle, onDelete, onRefresh }: {
+  bot: Bot;
+  onToggle: (id: string, status: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [saving,  setSaving]    = useState(false);
+  const cfg = bot.config as Record<string, unknown>;
+
+  const [editForm, setEditForm] = useState({
+    gridLow:    String(cfg.gridLow    ?? ""),
+    gridHigh:   String(cfg.gridHigh   ?? ""),
+    gridLevels: String(cfg.gridLevels ?? "8"),
+    amount:     String(cfg.amount     ?? "50"),
+    rsiLow:     String(cfg.rsiLow     ?? "32"),
+    rsiHigh:    String(cfg.rsiHigh    ?? "68"),
+    interval:   String(cfg.interval   ?? "4h"),
+  });
+
+  const isGrid = bot.strategy === "GRID";
+  const isRSI  = bot.strategy === "RSI";
+  const hasGridError = isGrid && (!cfg.gridLow || !cfg.gridHigh || Number(cfg.gridLow) >= Number(cfg.gridHigh));
+
+  async function saveConfig() {
+    setSaving(true);
+    const newConfig: Record<string, unknown> = { amount: parseFloat(editForm.amount) };
+    if (isGrid) {
+      newConfig.gridLow    = parseFloat(editForm.gridLow);
+      newConfig.gridHigh   = parseFloat(editForm.gridHigh);
+      newConfig.gridLevels = parseInt(editForm.gridLevels);
+    }
+    if (isRSI || bot.strategy === "DCA" || bot.strategy === "MACD") {
+      newConfig.interval = editForm.interval;
+    }
+    if (isRSI) {
+      newConfig.rsiLow  = parseFloat(editForm.rsiLow);
+      newConfig.rsiHigh = parseFloat(editForm.rsiHigh);
+    }
+    await fetch("/api/bots", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: bot.id, config: newConfig }),
+    });
+    setEditing(false);
+    setSaving(false);
+    await onRefresh();
+  }
+
+  return (
+    <div className={`bg-[#0f1117] border rounded-2xl overflow-hidden transition-colors ${hasGridError ? "border-red-500/40" : "border-[#1e2130]"}`}>
+      {/* Header row */}
+      <div className="p-5 flex items-center gap-4">
+        <div className="text-2xl">{STRATEGIES.find(s => s.id === bot.strategy)?.icon ?? "🤖"}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <h3 className="font-semibold text-white">{bot.name}</h3>
+            <span className={`px-2 py-0.5 text-xs rounded-full border ${STATUS_COLORS[bot.status]}`}>
+              {bot.status}
+            </span>
+            {hasGridError && (
+              <span className="px-2 py-0.5 text-xs rounded-full border border-red-500/40 bg-red-500/10 text-red-400">
+                ❌ Invalid grid range
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-[#64748b]">
+            {bot.strategy} · {bot.symbol} · {bot.totalTrades} trades
+            {isGrid && !!cfg.gridLow && !!cfg.gridHigh && (
+              <span className="ml-2 text-[#475569]">(grid: ${Number(cfg.gridLow as number).toLocaleString()}–${Number(cfg.gridHigh as number).toLocaleString()})</span>
+            )}
+          </p>
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className={`font-semibold text-sm ${bot.totalPnl >= 0 ? "text-[#00ff88]" : "text-red-400"}`}>
+            {bot.totalPnl >= 0 ? "+" : ""}${bot.totalPnl.toFixed(2)}
+          </p>
+          <p className="text-xs text-[#64748b]">Total PnL</p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button
+            onClick={() => setEditing(!editing)}
+            className={`px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+              editing ? "bg-[#7c3aed]/20 text-[#a78bfa] border-[#7c3aed]/40" : "text-[#64748b] border-[#1e2130] hover:text-white"
+            }`}
+          >
+            ✎ Edit
+          </button>
+          <button
+            onClick={() => void onToggle(bot.id, bot.status)}
+            className={`px-4 py-2 rounded-xl text-xs font-medium transition-colors ${
+              bot.status === "RUNNING"
+                ? "bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20"
+                : "bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/30 hover:bg-[#00ff88]/20"
+            }`}
+          >
+            {bot.status === "RUNNING" ? "Stop" : "Start"}
+          </button>
+          <button
+            onClick={() => void onDelete(bot.id)}
+            className="px-3 py-2 rounded-xl text-xs text-[#64748b] border border-[#1e2130] hover:text-red-400 hover:border-red-500/30 transition-colors"
+          >
+            🗑
+          </button>
+        </div>
+      </div>
+
+      {/* Inline edit panel */}
+      {editing && (
+        <div className="border-t border-[#1e2130] bg-[#0a0d14] p-5 space-y-4">
+          {hasGridError && (
+            <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl text-xs text-red-400">
+              ❌ <strong>Grid bounds missing or invalid.</strong> Set Low and High prices that bracket the current BTC price (~$104,000–$107,000). The bot will only trade when price is within this range.
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[#64748b] mb-1 block">Amount per Order (USDT)</label>
+              <input type="number" value={editForm.amount}
+                onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50" />
+            </div>
+
+            {(bot.strategy === "DCA" || bot.strategy === "RSI" || bot.strategy === "MACD") && (
+              <div>
+                <label className="text-xs text-[#64748b] mb-1 block">Check Interval</label>
+                <select value={editForm.interval} onChange={e => setEditForm(f => ({ ...f, interval: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50">
+                  <option value="1h">Every 1 hour</option>
+                  <option value="4h">Every 4 hours</option>
+                  <option value="24h">Every 24 hours</option>
+                </select>
+              </div>
+            )}
+
+            {isGrid && (
+              <>
+                <div>
+                  <label className="text-xs text-[#64748b] mb-1 block">Grid Low Price ($)</label>
+                  <input type="number" value={editForm.gridLow}
+                    onChange={e => setEditForm(f => ({ ...f, gridLow: e.target.value }))}
+                    placeholder="e.g. 95000"
+                    className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50 placeholder-[#475569]" />
+                </div>
+                <div>
+                  <label className="text-xs text-[#64748b] mb-1 block">Grid High Price ($)</label>
+                  <input type="number" value={editForm.gridHigh}
+                    onChange={e => setEditForm(f => ({ ...f, gridHigh: e.target.value }))}
+                    placeholder="e.g. 115000"
+                    className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50 placeholder-[#475569]" />
+                </div>
+                <div>
+                  <label className="text-xs text-[#64748b] mb-1 block">Grid Levels</label>
+                  <input type="number" value={editForm.gridLevels}
+                    onChange={e => setEditForm(f => ({ ...f, gridLevels: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50" />
+                  <p className="text-[10px] text-[#475569] mt-1">Number of buy zones within the range</p>
+                </div>
+              </>
+            )}
+
+            {isRSI && (
+              <>
+                <div>
+                  <label className="text-xs text-[#64748b] mb-1 block">RSI Buy Below (oversold)</label>
+                  <input type="number" value={editForm.rsiLow}
+                    onChange={e => setEditForm(f => ({ ...f, rsiLow: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50" />
+                </div>
+                <div>
+                  <label className="text-xs text-[#64748b] mb-1 block">RSI Exit Above (overbought)</label>
+                  <input type="number" value={editForm.rsiHigh}
+                    onChange={e => setEditForm(f => ({ ...f, rsiHigh: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-[#1a1f2e] border border-[#1e2130] rounded-xl text-white text-sm focus:outline-none focus:border-[#00ff88]/50" />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => void saveConfig()}
+              disabled={saving}
+              className="px-5 py-2.5 bg-[#00ff88] text-black font-bold rounded-xl hover:bg-[#00cc6a] text-sm transition-colors disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save Config"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-5 py-2.5 border border-[#1e2130] text-[#64748b] rounded-xl hover:text-white text-sm transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface BotRunResult { botId: string; name: string; result: string; }
 
 function BotDiagnostics() {
@@ -896,44 +1097,7 @@ export default function BotsPage() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-white">Running Bots ({bots.length})</h2>
           {bots.map((bot) => (
-            <div key={bot.id} className="bg-[#0f1117] border border-[#1e2130] rounded-2xl p-5 flex items-center gap-4">
-              <div className="text-2xl">{STRATEGIES.find(s => s.id === bot.strategy)?.icon ?? "🤖"}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-white">{bot.name}</h3>
-                  <span className={`px-2 py-0.5 text-xs rounded-full border ${STATUS_COLORS[bot.status]}`}>
-                    {bot.status}
-                  </span>
-                </div>
-                <p className="text-xs text-[#64748b]">
-                  {bot.strategy} · {bot.symbol} · {bot.totalTrades} trades
-                </p>
-              </div>
-              <div className="text-right">
-                <p className={`font-semibold text-sm ${bot.totalPnl >= 0 ? "text-[#00ff88]" : "text-red-400"}`}>
-                  {bot.totalPnl >= 0 ? "+" : ""}${bot.totalPnl.toFixed(2)}
-                </p>
-                <p className="text-xs text-[#64748b]">Total PnL</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void toggleBot(bot.id, bot.status)}
-                  className={`px-4 py-2 rounded-xl text-xs font-medium transition-colors ${
-                    bot.status === "RUNNING"
-                      ? "bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20"
-                      : "bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/30 hover:bg-[#00ff88]/20"
-                  }`}
-                >
-                  {bot.status === "RUNNING" ? "Stop" : "Start"}
-                </button>
-                <button
-                  onClick={() => void deleteBot(bot.id)}
-                  className="px-3 py-2 rounded-xl text-xs text-[#64748b] border border-[#1e2130] hover:text-red-400 hover:border-red-500/30 transition-colors"
-                >
-                  🗑
-                </button>
-              </div>
-            </div>
+            <BotCard key={bot.id} bot={bot} onToggle={toggleBot} onDelete={deleteBot} onRefresh={fetchBots} />
           ))}
         </div>
       )}
