@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  ChevronRight, Brain, Shield, Wallet
+  ChevronRight, Brain, Shield, Wallet, BarChart2,
 } from "lucide-react";
 
 const nav = [
@@ -15,6 +15,7 @@ const nav = [
   { href: "/trade",     label: "Trade",       icon: Zap },
   { href: "/bots",      label: "Bots",        icon: Bot },
   { href: "/signals",   label: "Signals",     icon: LineChart },
+  { href: "/charts",    label: "Charts",      icon: BarChart2, badge: "NEW" },
   { href: "/settings",  label: "Settings",    icon: Settings },
 ];
 
