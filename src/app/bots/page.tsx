@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { BotRecommendation } from "@/lib/bot-advisor";
+import { NIM_MODELS, DEFAULT_NIM_MODEL, type NimModelId } from "@/lib/nvidia-nim";
 import { COMMODITY_ASSETS, FOREX_ASSETS } from "@/lib/market-signals-types";
+
+type AIProvider = "claude" | "nim";
 
 // ── Asset lists ───────────────────────────────────────────────────────────────
 const CRYPTO_PAIRS = [
@@ -638,6 +641,8 @@ export default function BotsPage() {
   const [recError, setRecError]     = useState<string | null>(null);
   const [assetClass, setAssetClass] = useState<AssetCategory>("crypto");
   const [showAllNews, setShowAllNews] = useState(false);
+  const [aiProvider, setAiProvider] = useState<AIProvider>("claude");
+  const [nimModel, setNimModel]     = useState<NimModelId>(DEFAULT_NIM_MODEL);
 
   const assetPairs =
     assetClass === "crypto" ? CRYPTO_PAIRS
@@ -674,7 +679,12 @@ export default function BotsPage() {
       const res = await fetch("/api/advisor/bot-recommendation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: form.symbol, category: assetClass }),
+        body: JSON.stringify({
+          symbol:   form.symbol,
+          category: assetClass,
+          provider: aiProvider,
+          nimModel: aiProvider === "nim" ? nimModel : undefined,
+        }),
       });
       const data = await res.json() as BotRecommendation & { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Unknown error");
@@ -911,23 +921,60 @@ export default function BotsPage() {
 
           {/* ── AI Intelligence Panel ──────────────────────────────────── */}
           <div className="border border-[#1e2130] rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 bg-[#0a0d14]">
+            <div className="flex items-start justify-between px-4 py-3 bg-[#0a0d14] gap-3 flex-wrap">
               <div>
                 <span className="text-sm font-medium text-white">AI Investment Intelligence</span>
-                <span className="text-xs text-[#64748b] ml-2">
-                  — Technical analysis + live news from Reuters, Yahoo Finance, MarketWatch
-                </span>
+                <span className="text-xs text-[#64748b] ml-2">— Technical analysis + live news</span>
+                {/* Provider toggle */}
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px] text-[#475569] uppercase tracking-wider">AI Model:</span>
+                  <div className="flex rounded-lg overflow-hidden border border-[#1e2130]">
+                    <button
+                      onClick={() => setAiProvider("claude")}
+                      className={`px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                        aiProvider === "claude" ? "bg-[#7c3aed] text-white" : "bg-[#0f1117] text-[#64748b] hover:text-white"
+                      }`}
+                    >
+                      ✦ Claude
+                    </button>
+                    <button
+                      onClick={() => setAiProvider("nim")}
+                      className={`px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                        aiProvider === "nim" ? "bg-[#76b900] text-black" : "bg-[#0f1117] text-[#64748b] hover:text-white"
+                      }`}
+                    >
+                      ⚡ NVIDIA NIM
+                    </button>
+                  </div>
+                  {aiProvider === "nim" && (
+                    <select
+                      value={nimModel}
+                      onChange={e => setNimModel(e.target.value as NimModelId)}
+                      className="px-2 py-1 bg-[#0f1117] border border-[#1e2130] rounded-lg text-[10px] text-white focus:outline-none focus:border-[#76b900]/50"
+                    >
+                      {NIM_MODELS.map(m => (
+                        <option key={m.id} value={m.id}>{m.label} ({m.badge})</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => void askAI()}
                 disabled={loadingRec}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                className={`flex items-center gap-2 px-4 py-2 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors flex-shrink-0 ${
+                  aiProvider === "nim"
+                    ? "bg-[#76b900] text-black hover:bg-[#5e9400]"
+                    : "bg-purple-600 hover:bg-purple-500"
+                }`}
               >
                 {loadingRec ? (
                   <>
                     <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Analyzing news + charts...
+                    Analyzing…
                   </>
+                ) : aiProvider === "nim" ? (
+                  <>⚡ Ask NIM</>
                 ) : (
                   <>✦ Ask Claude</>
                 )}

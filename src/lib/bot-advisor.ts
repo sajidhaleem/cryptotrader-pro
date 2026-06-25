@@ -1,7 +1,8 @@
-// Claude-powered bot & investment advisor
+// AI-powered bot & investment advisor — Claude (Anthropic) or NVIDIA NIM
 // Technical data: CoinGecko (crypto) | Yahoo Finance (commodity/forex)
 // News context: Yahoo Finance RSS, Reuters, MarketWatch, CoinDesk
 import Anthropic from "@anthropic-ai/sdk";
+import { callNIM, DEFAULT_NIM_MODEL, type NimModelId } from "./nvidia-nim";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
 import axios from "axios";
 import { COINGECKO_IDS } from "./market-data";
@@ -220,10 +221,21 @@ function describeMarket(snap: MarketSnapshot, news: NewsContext, category: Asset
   return techSection + newsSection;
 }
 
+export type AIProvider = "claude" | "nim";
+
 // ── Main export ───────────────────────────────────────────────────────────────
-export async function getBotRecommendation(symbol: string, category: AssetCategory = "crypto"): Promise<BotRecommendation> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
+export async function getBotRecommendation(
+  symbol:   string,
+  category: AssetCategory = "crypto",
+  provider: AIProvider    = "claude",
+  nimModel: NimModelId    = DEFAULT_NIM_MODEL,
+): Promise<BotRecommendation> {
+  // Validate API key before expensive market-data fetching
+  if (provider === "nim") {
+    if (!process.env.NVIDIA_API_KEY) throw new Error("NVIDIA_API_KEY not configured — get free credits at build.nvidia.com and add it to environment variables");
+  } else {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
+  }
 
   // Build market snapshot (crypto via CoinGecko, others via Yahoo Finance)
   const snap = category === "crypto"
@@ -235,8 +247,6 @@ export async function getBotRecommendation(symbol: string, category: AssetCatego
     headlines: [], sentiment: "NEUTRAL", sentimentScore: 0,
     bullishCount: 0, bearishCount: 0, sources: [],
   }));
-
-  const client = new Anthropic({ apiKey });
 
   const isCrypto     = category === "crypto";
   const assetLabel   = category === "crypto" ? "crypto (Binance)" : category === "commodity" ? "commodity" : "forex pair";
@@ -296,17 +306,23 @@ Respond as JSON:
   "safetyNotes": ["<risk note 1>", "<risk note 2>", "<note 3>"]
 }`;
 
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 900,
-    messages: [{ role: "user", content: userMsg }],
-    system: systemPrompt,
-  });
-
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected Claude response type");
-
-  let text = content.text.trim();
+  let text: string;
+  if (provider === "nim") {
+    text = await callNIM(systemPrompt, userMsg, nimModel, 1024);
+  } else {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
+    const client = new Anthropic({ apiKey });
+    const message = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 900,
+      messages: [{ role: "user", content: userMsg }],
+      system: systemPrompt,
+    });
+    const content = message.content[0];
+    if (content.type !== "text") throw new Error("Unexpected Claude response type");
+    text = content.text.trim();
+  }
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch?.[1]) text = fenceMatch[1].trim();
 
