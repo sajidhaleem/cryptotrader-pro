@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import type { BotRecommendation } from "@/lib/bot-advisor";
 import { NIM_MODELS, DEFAULT_NIM_MODEL, type NimModelId } from "@/lib/nvidia-nim";
+import { KIMI_MODELS, DEFAULT_KIMI_MODEL, type KimiModelId } from "@/lib/kimi";
 import { COMMODITY_ASSETS, FOREX_ASSETS } from "@/lib/market-signals-types";
 
-type AIProvider = "claude" | "nim";
+type AIProvider = "claude" | "nim" | "kimi";
 
 // ── Asset lists ───────────────────────────────────────────────────────────────
 const CRYPTO_PAIRS = [
@@ -641,8 +642,9 @@ export default function BotsPage() {
   const [recError, setRecError]     = useState<string | null>(null);
   const [assetClass, setAssetClass] = useState<AssetCategory>("crypto");
   const [showAllNews, setShowAllNews] = useState(false);
-  const [aiProvider, setAiProvider] = useState<AIProvider>("claude");
-  const [nimModel, setNimModel]     = useState<NimModelId>(DEFAULT_NIM_MODEL);
+  const [aiProvider,  setAiProvider]  = useState<AIProvider>("claude");
+  const [nimModel,    setNimModel]    = useState<NimModelId>(DEFAULT_NIM_MODEL);
+  const [kimiModel,   setKimiModel]   = useState<KimiModelId>(DEFAULT_KIMI_MODEL);
 
   const assetPairs =
     assetClass === "crypto" ? CRYPTO_PAIRS
@@ -682,8 +684,9 @@ export default function BotsPage() {
         body: JSON.stringify({
           symbol:   form.symbol,
           category: assetClass,
-          provider: aiProvider,
-          nimModel: aiProvider === "nim" ? nimModel : undefined,
+          provider:   aiProvider,
+          nimModel:   aiProvider === "nim"  ? nimModel  : undefined,
+          kimiModel:  aiProvider === "kimi" ? kimiModel : undefined,
         }),
       });
       const data = await res.json() as BotRecommendation & { error?: string };
@@ -945,6 +948,14 @@ export default function BotsPage() {
                     >
                       ⚡ NVIDIA NIM
                     </button>
+                    <button
+                      onClick={() => setAiProvider("kimi")}
+                      className={`px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                        aiProvider === "kimi" ? "bg-[#0ea5e9] text-black" : "bg-[#0f1117] text-[#64748b] hover:text-white"
+                      }`}
+                    >
+                      ✦ Kimi
+                    </button>
                   </div>
                   {aiProvider === "nim" && (
                     <select
@@ -957,24 +968,39 @@ export default function BotsPage() {
                       ))}
                     </select>
                   )}
+                  {aiProvider === "kimi" && (
+                    <select
+                      value={kimiModel}
+                      onChange={e => setKimiModel(e.target.value as KimiModelId)}
+                      className="px-2 py-1 bg-[#0f1117] border border-[#1e2130] rounded-lg text-[10px] text-white focus:outline-none focus:border-[#0ea5e9]/50"
+                    >
+                      {KIMI_MODELS.map(m => (
+                        <option key={m.id} value={m.id}>{m.label} ({m.badge})</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
               <button
                 onClick={() => void askAI()}
                 disabled={loadingRec}
-                className={`flex items-center gap-2 px-4 py-2 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors flex-shrink-0 ${
+                className={`flex items-center gap-2 px-4 py-2 disabled:opacity-50 text-xs font-semibold rounded-lg transition-colors flex-shrink-0 ${
                   aiProvider === "nim"
                     ? "bg-[#76b900] text-black hover:bg-[#5e9400]"
-                    : "bg-purple-600 hover:bg-purple-500"
+                    : aiProvider === "kimi"
+                    ? "bg-[#0ea5e9] text-black hover:bg-[#0284c7]"
+                    : "bg-purple-600 text-white hover:bg-purple-500"
                 }`}
               >
                 {loadingRec ? (
                   <>
-                    <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                     Analyzing…
                   </>
                 ) : aiProvider === "nim" ? (
                   <>⚡ Ask NIM</>
+                ) : aiProvider === "kimi" ? (
+                  <>✦ Ask Kimi</>
                 ) : (
                   <>✦ Ask Claude</>
                 )}

@@ -3,6 +3,7 @@
 // News context: Yahoo Finance RSS, Reuters, MarketWatch, CoinDesk
 import Anthropic from "@anthropic-ai/sdk";
 import { callNIM, DEFAULT_NIM_MODEL, type NimModelId } from "./nvidia-nim";
+import { callKimi, DEFAULT_KIMI_MODEL, type KimiModelId } from "./kimi";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
 import axios from "axios";
 import { COINGECKO_IDS } from "./market-data";
@@ -221,18 +222,21 @@ function describeMarket(snap: MarketSnapshot, news: NewsContext, category: Asset
   return techSection + newsSection;
 }
 
-export type AIProvider = "claude" | "nim";
+export type AIProvider = "claude" | "nim" | "kimi";
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function getBotRecommendation(
-  symbol:   string,
-  category: AssetCategory = "crypto",
-  provider: AIProvider    = "claude",
-  nimModel: NimModelId    = DEFAULT_NIM_MODEL,
+  symbol:    string,
+  category:  AssetCategory = "crypto",
+  provider:  AIProvider    = "claude",
+  nimModel:  NimModelId    = DEFAULT_NIM_MODEL,
+  kimiModel: KimiModelId   = DEFAULT_KIMI_MODEL,
 ): Promise<BotRecommendation> {
   // Validate API key before expensive market-data fetching
   if (provider === "nim") {
     if (!process.env.NVIDIA_API_KEY) throw new Error("NVIDIA_API_KEY not configured — get free credits at build.nvidia.com and add it to environment variables");
+  } else if (provider === "kimi") {
+    if (!process.env.MOONSHOT_API_KEY) throw new Error("MOONSHOT_API_KEY not configured — get free credits at platform.moonshot.cn and add it to environment variables");
   } else {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
   }
@@ -309,6 +313,8 @@ Respond as JSON:
   let text: string;
   if (provider === "nim") {
     text = await callNIM(systemPrompt, userMsg, nimModel, 1024);
+  } else if (provider === "kimi") {
+    text = await callKimi(systemPrompt, userMsg, kimiModel, 1024);
   } else {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
