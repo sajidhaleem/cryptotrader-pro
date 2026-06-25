@@ -96,8 +96,10 @@ function BotCard({ bot, onToggle, onDelete, onRefresh }: {
   onDelete: (id: string) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
-  const [editing, setEditing]   = useState(false);
-  const [saving,  setSaving]    = useState(false);
+  const [editing, setEditing]         = useState(false);
+  const [saving,  setSaving]          = useState(false);
+  const [livePrice, setLivePrice]     = useState<number | null>(null);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
   const cfg = bot.config as Record<string, unknown>;
 
   const [editForm, setEditForm] = useState({
@@ -113,6 +115,23 @@ function BotCard({ bot, onToggle, onDelete, onRefresh }: {
   const isGrid = bot.strategy === "GRID";
   const isRSI  = bot.strategy === "RSI";
   const hasGridError = isGrid && (!cfg.gridLow || !cfg.gridHigh || Number(cfg.gridLow) >= Number(cfg.gridHigh));
+
+  async function fetchLivePrice() {
+    setFetchingPrice(true);
+    try {
+      const res = await fetch(`/api/signals?symbol=${bot.symbol}&interval=4h`);
+      const data = await res.json() as { price?: number };
+      if (data?.price) {
+        setLivePrice(data.price);
+        const p = data.price;
+        const low  = Math.round(p * 0.88 / 500) * 500;
+        const high = Math.round(p * 1.12 / 500) * 500;
+        setEditForm(f => ({ ...f, gridLow: String(low), gridHigh: String(high) }));
+      }
+    } catch { /* ignore */ } finally {
+      setFetchingPrice(false);
+    }
+  }
 
   async function saveConfig() {
     setSaving(true);
@@ -200,9 +219,31 @@ function BotCard({ bot, onToggle, onDelete, onRefresh }: {
       {/* Inline edit panel */}
       {editing && (
         <div className="border-t border-[#1e2130] bg-[#0a0d14] p-5 space-y-4">
-          {hasGridError && (
+          {isGrid && (
+            <div className="p-3 rounded-xl border border-[#1e2130] bg-[#0f1117] text-xs flex items-center justify-between gap-3">
+              <div>
+                <p className="text-white font-semibold mb-0.5">
+                  {livePrice ? `Live price: $${livePrice.toLocaleString()}` : "Fetch live price to auto-fill grid range"}
+                </p>
+                <p className="text-[#64748b]">
+                  {livePrice
+                    ? `Range pre-filled ±12% — adjust the levels below then save`
+                    : "Grid must bracket the current market price — Low &lt; Price &lt; High"}
+                </p>
+              </div>
+              <button
+                onClick={() => void fetchLivePrice()}
+                disabled={fetchingPrice}
+                className="flex-shrink-0 px-3 py-2 bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-xs font-semibold rounded-xl hover:bg-[#00ff88]/20 transition-colors disabled:opacity-50"
+              >
+                {fetchingPrice ? "Fetching…" : livePrice ? "↻ Refresh" : "📍 Get Price"}
+              </button>
+            </div>
+          )}
+
+          {hasGridError && !livePrice && (
             <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl text-xs text-red-400">
-              ❌ <strong>Grid bounds missing or invalid.</strong> Set Low and High prices that bracket the current BTC price (~$104,000–$107,000). The bot will only trade when price is within this range.
+              ❌ <strong>Grid bounds missing or invalid.</strong> Click &quot;📍 Get Price&quot; above to auto-fill a valid range around the current price.
             </div>
           )}
 
@@ -293,7 +334,7 @@ function BotCard({ bot, onToggle, onDelete, onRefresh }: {
 
 interface BotRunResult { botId: string; name: string; result: string; }
 
-function BotDiagnostics() {
+function BotDiagnostics({ autoRun = false }: { autoRun?: boolean }) {
   const [running, setRunning]   = useState(false);
   const [results, setResults]   = useState<BotRunResult[] | null>(null);
   const [ranAt,   setRanAt]     = useState<string | null>(null);
@@ -315,6 +356,11 @@ function BotDiagnostics() {
       setRunning(false);
     }
   }
+
+  useEffect(() => {
+    if (autoRun) void runNow();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function resultColor(msg: string) {
     if (msg.includes("BUY") || msg.includes("Paper BUY") || msg.includes("Live BUY")) return "#00ff88";
@@ -394,6 +440,43 @@ function BotDiagnostics() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function GridPriceHelper({ symbol, onSuggest }: { symbol: string; onSuggest: (lo: number, hi: number) => void }) {
+  const [price, setPrice]     = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function fetch_() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/signals?symbol=${symbol}&interval=4h`);
+      const data = await res.json() as { price?: number };
+      if (data?.price) {
+        setPrice(data.price);
+        const lo = Math.round(data.price * 0.88 / 500) * 500;
+        const hi = Math.round(data.price * 1.12 / 500) * 500;
+        onSuggest(lo, hi);
+      }
+    } catch { /* ignore */ } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="flex items-center justify-between p-3 bg-[#0a0d14] border border-[#1e2130] rounded-xl text-xs">
+      <div>
+        <p className="text-white font-semibold">
+          {price ? `Current price: $${price.toLocaleString()} — range pre-filled ±12%` : "Need a starting point for grid bounds?"}
+        </p>
+        <p className="text-[#64748b] mt-0.5">Grid Low must be below and High above the current price</p>
+      </div>
+      <button
+        onClick={() => void fetch_()}
+        disabled={loading}
+        className="flex-shrink-0 px-3 py-2 bg-[#00ff88]/10 border border-[#00ff88]/25 text-[#00ff88] font-semibold rounded-xl hover:bg-[#00ff88]/20 transition-colors disabled:opacity-50"
+      >
+        {loading ? "Fetching…" : price ? "↻ Refresh" : "📍 Suggest Range"}
+      </button>
     </div>
   );
 }
@@ -549,6 +632,7 @@ export default function BotsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm]         = useState(DEFAULT_FORM);
   const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [rec, setRec]           = useState<BotRecommendation | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
   const [recError, setRecError]     = useState<string | null>(null);
@@ -621,6 +705,15 @@ export default function BotsPage() {
   }
 
   async function createBot() {
+    setFormError(null);
+    if (form.strategy === "GRID") {
+      const lo = parseFloat(form.gridLow);
+      const hi = parseFloat(form.gridHigh);
+      if (!form.gridLow || !form.gridHigh || isNaN(lo) || isNaN(hi) || lo >= hi) {
+        setFormError("Grid strategy requires a Low price less than High price. Both values must bracket the current market price.");
+        return;
+      }
+    }
     setCreating(true);
     const config: Record<string, unknown> = { interval: form.interval, amount: parseFloat(form.amount) };
     if (form.strategy === "RSI")  { config.rsiLow = parseFloat(form.rsiLow); config.rsiHigh = parseFloat(form.rsiHigh); }
@@ -794,6 +887,9 @@ export default function BotsPage() {
 
             {form.strategy === "GRID" && (
               <>
+                <div className="col-span-2">
+                  <GridPriceHelper symbol={form.symbol} onSuggest={(lo, hi) => setForm(f => ({ ...f, gridLow: String(lo), gridHigh: String(hi) }))} />
+                </div>
                 <div>
                   <label className="text-xs text-[#64748b] mb-1 block">Grid Low Price</label>
                   <input type="number" value={form.gridLow} onChange={e => setForm(f => ({ ...f, gridLow: e.target.value }))}
@@ -1043,6 +1139,13 @@ export default function BotsPage() {
             )}
           </div>
 
+          {/* Form validation error */}
+          {formError && (
+            <div className="p-3 bg-red-500/5 border border-red-500/25 rounded-xl text-xs text-red-400">
+              ❌ {formError}
+            </div>
+          )}
+
           {/* Deploy button (only for crypto) */}
           {assetClass === "crypto" && (
             <div className="flex gap-3">
@@ -1073,7 +1176,9 @@ export default function BotsPage() {
       )}
 
       {/* ── Bot Diagnostics — Run Now ────────────────────────────────────── */}
-      {bots.length > 0 && <BotDiagnostics />}
+      {bots.length > 0 && (
+        <BotDiagnostics autoRun={bots.some(b => b.status === "RUNNING")} />
+      )}
 
       {/* ── Active Bots List ─────────────────────────────────────────────── */}
       {loading ? (
@@ -1095,7 +1200,25 @@ export default function BotsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-white">Running Bots ({bots.length})</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Running Bots ({bots.length})</h2>
+            <div className="flex items-center gap-3 text-xs text-[#64748b]">
+              {(() => {
+                const healthy = bots.filter(b => {
+                  if (b.strategy !== "GRID") return true;
+                  const c = b.config as Record<string, unknown>;
+                  return c.gridLow && c.gridHigh && Number(c.gridLow) < Number(c.gridHigh);
+                }).length;
+                const errors = bots.length - healthy;
+                return (
+                  <>
+                    <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#00ff88]" />{healthy} healthy</span>
+                    {errors > 0 && <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-400" />{errors} need config</span>}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
           {bots.map((bot) => (
             <BotCard key={bot.id} bot={bot} onToggle={toggleBot} onDelete={deleteBot} onRefresh={fetchBots} />
           ))}
