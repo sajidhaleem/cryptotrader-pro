@@ -312,18 +312,19 @@ Respond as JSON:
 
   let text: string;
   if (provider === "nim") {
-    text = await callNIM(systemPrompt, userMsg, nimModel, 1024);
+    text = await callNIM(systemPrompt, userMsg, nimModel, 700);
   } else if (provider === "kimi") {
-    text = await callKimi(systemPrompt, userMsg, kimiModel, 1024);
+    text = await callKimi(systemPrompt, userMsg, kimiModel, 700);
   } else {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured — add it to environment variables");
     const client = new Anthropic({ apiKey });
+    // System prompt cached per category — saves ~90% on input tokens for repeated calls
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 900,
+      max_tokens: 700,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userMsg }],
-      system: systemPrompt,
     });
     const content = message.content[0];
     if (content.type !== "text") throw new Error("Unexpected Claude response type");
