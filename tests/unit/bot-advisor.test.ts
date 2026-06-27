@@ -12,6 +12,17 @@ vi.mock("@anthropic-ai/sdk", () => {
   return { default: MockAnthropicClass };
 });
 
+vi.mock("../../src/lib/news-feed", () => ({
+  fetchNewsContext: vi.fn().mockResolvedValue({
+    headlines: [],
+    sentiment: "NEUTRAL",
+    sentimentScore: 0,
+    bullishCount: 0,
+    bearishCount: 0,
+    sources: [],
+  }),
+}));
+
 const mockAxios = vi.mocked(axios);
 
 import { getBotRecommendation } from "../../src/lib/bot-advisor";
@@ -175,7 +186,7 @@ describe("getBotRecommendation — error handling", () => {
   });
 
   it("throws for unsupported symbol", async () => {
-    await expect(getBotRecommendation("FAKECOIN")).rejects.toThrow("Unsupported symbol");
+    await expect(getBotRecommendation("FAKECOIN")).rejects.toThrow("Unsupported crypto symbol");
   });
 
   it("retries once on 429 from CoinGecko", async () => {
@@ -204,7 +215,7 @@ describe("getBotRecommendation — error handling", () => {
 
     const recPromise = getBotRecommendation("BTCUSDT");
     // Attach rejection handler BEFORE advancing timers to prevent unhandled rejection warning
-    const expectation = expect(recPromise).rejects.toThrow("Unexpected response type");
+    const expectation = expect(recPromise).rejects.toThrow("Unexpected Claude response type");
     await vi.runAllTimersAsync();
     await expectation;
   });
