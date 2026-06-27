@@ -1,16 +1,26 @@
 export type AssetCategory = "crypto" | "commodity" | "forex";
 
 export const CRYPTO_ASSETS = [
-  { symbol: "BTCUSDT",  label: "Bitcoin",        short: "BTC"  },
-  { symbol: "ETHUSDT",  label: "Ethereum",       short: "ETH"  },
-  { symbol: "BNBUSDT",  label: "BNB",            short: "BNB"  },
-  { symbol: "SOLUSDT",  label: "Solana",         short: "SOL"  },
-  { symbol: "XRPUSDT",  label: "XRP",            short: "XRP"  },
-  { symbol: "ADAUSDT",  label: "Cardano",        short: "ADA"  },
-  { symbol: "DOGEUSDT", label: "Dogecoin",       short: "DOGE" },
-  { symbol: "AVAXUSDT", label: "Avalanche",      short: "AVAX" },
-  { symbol: "DOTUSDT",  label: "Polkadot",       short: "DOT"  },
-  { symbol: "LINKUSDT", label: "Chainlink",      short: "LINK" },
+  { symbol: "BTCUSDT",  label: "Bitcoin",     short: "BTC"  },
+  { symbol: "ETHUSDT",  label: "Ethereum",    short: "ETH"  },
+  { symbol: "SOLUSDT",  label: "Solana",      short: "SOL"  },
+  { symbol: "BNBUSDT",  label: "BNB",         short: "BNB"  },
+  { symbol: "XRPUSDT",  label: "XRP",         short: "XRP"  },
+  { symbol: "DOGEUSDT", label: "Dogecoin",    short: "DOGE" },
+  { symbol: "ADAUSDT",  label: "Cardano",     short: "ADA"  },
+  { symbol: "SUIUSDT",  label: "Sui",         short: "SUI"  },
+  { symbol: "AVAXUSDT", label: "Avalanche",   short: "AVAX" },
+  { symbol: "TONUSDT",  label: "Toncoin",     short: "TON"  },
+  { symbol: "LINKUSDT", label: "Chainlink",   short: "LINK" },
+  { symbol: "NEARUSDT", label: "NEAR",        short: "NEAR" },
+  { symbol: "APTUSDT",  label: "Aptos",       short: "APT"  },
+  { symbol: "INJUSDT",  label: "Injective",   short: "INJ"  },
+  { symbol: "ARBUSDT",  label: "Arbitrum",    short: "ARB"  },
+  { symbol: "DOTUSDT",  label: "Polkadot",    short: "DOT"  },
+  { symbol: "OPUSDT",   label: "Optimism",    short: "OP"   },
+  { symbol: "WIFUSDT",  label: "dogwifhat",   short: "WIF"  },
+  { symbol: "PEPEUSDT", label: "Pepe",        short: "PEPE" },
+  { symbol: "SEIUSDT",  label: "Sei",         short: "SEI"  },
 ];
 
 export const COMMODITY_ASSETS = [

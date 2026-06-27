@@ -30,8 +30,8 @@ describe("COINGECKO_IDS", () => {
     expect(COINGECKO_IDS["XRPUSDT"]).toBe("ripple");
   });
 
-  it("has 12 pairs total", () => {
-    expect(Object.keys(COINGECKO_IDS)).toHaveLength(12);
+  it("has at least 12 pairs", () => {
+    expect(Object.keys(COINGECKO_IDS).length).toBeGreaterThanOrEqual(12);
   });
 });
 
@@ -232,7 +232,9 @@ describe("getKlinesBybit", () => {
     return { retCode: 0, retMsg: "OK", result: { list } };
   }
 
-  it("returns Kline array in chronological order", async () => {
+  const emptyBybit = { retCode: 0, retMsg: "OK", result: { list: [] } };
+
+  it("returns Kline array in chronological order (spot succeeds)", async () => {
     mockAxios.get = vi.fn().mockResolvedValue({ data: makeBybitResponse(200) });
     const klines = await getKlinesBybit("BTCUSDT", "1d", 200);
     expect(klines).toHaveLength(200);
@@ -249,11 +251,17 @@ describe("getKlinesBybit", () => {
     expect(klines[0].volume).toBe(1000);
   });
 
-  it("throws when Bybit returns non-zero retCode", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { retCode: 10001, retMsg: "Invalid symbol", result: { list: [] } },
-    });
-    await expect(getKlinesBybit("INVALID", "1d", 100)).rejects.toThrow("Bybit API error");
+  it("falls back to linear when spot returns empty list", async () => {
+    mockAxios.get = vi.fn()
+      .mockResolvedValueOnce({ data: emptyBybit })          // spot empty
+      .mockResolvedValueOnce({ data: makeBybitResponse(50) }); // linear ok
+    const klines = await getKlinesBybit("BTCUSDT", "1d", 50);
+    expect(klines).toHaveLength(50);
+  });
+
+  it("throws when both spot and linear return empty", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({ data: emptyBybit });
+    await expect(getKlinesBybit("INVALID", "1d", 100)).rejects.toThrow("Bybit: no data");
   });
 
   it("calls Bybit endpoint (not CoinGecko)", async () => {

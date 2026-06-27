@@ -9,20 +9,30 @@ const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
 const CRYPTOPANIC_BASE = "https://cryptopanic.com/api/v1/posts";
 
-// Map Binance symbols to CoinGecko IDs
+// Map trading symbols to CoinGecko IDs
 const SYMBOL_MAP: Record<string, string> = {
-  BTCUSDT: "bitcoin",
-  ETHUSDT: "ethereum",
-  BNBUSDT: "binancecoin",
-  SOLUSDT: "solana",
-  ADAUSDT: "cardano",
-  XRPUSDT: "ripple",
-  DOTUSDT: "polkadot",
-  LINKUSDT: "chainlink",
-  AVAXUSDT: "avalanche-2",
-  MATICUSDT: "matic-network",
+  BTCUSDT:  "bitcoin",
+  ETHUSDT:  "ethereum",
+  BNBUSDT:  "binancecoin",
+  SOLUSDT:  "solana",
+  XRPUSDT:  "ripple",
+  ADAUSDT:  "cardano",
   DOGEUSDT: "dogecoin",
-  LTCUSDT: "litecoin",
+  AVAXUSDT: "avalanche-2",
+  DOTUSDT:  "polkadot",
+  LINKUSDT: "chainlink",
+  SUIUSDT:  "sui",
+  NEARUSDT: "near",
+  APTUSDT:  "aptos",
+  INJUSDT:  "injective-protocol",
+  TONUSDT:  "the-open-network",
+  ARBUSDT:  "arbitrum",
+  OPUSDT:   "optimism",
+  WIFUSDT:  "dogwifcoin",
+  PEPEUSDT: "pepe",
+  SEIUSDT:  "sei-network",
+  MATICUSDT: "matic-network",
+  LTCUSDT:  "litecoin",
 };
 
 export interface MarketData {
@@ -350,19 +360,24 @@ interface BybitKlineResponse {
 
 export async function getKlinesBybit(symbol: string, interval: string, limit: number): Promise<Kline[]> {
   const bybitInterval = BYBIT_INTERVAL[interval] ?? "D";
-  const { data } = await axios.get<BybitKlineResponse>(BYBIT_BASE, {
-    params: { category: "linear", symbol, interval: bybitInterval, limit: Math.min(limit, 1000) },
-    timeout: 10000,
-  });
-  if (data.retCode !== 0) throw new Error(`Bybit API error ${data.retCode}: ${data.retMsg}`);
-  // Bybit returns newest-first; reverse to chronological order
-  return data.result.list.reverse().map(([t, o, h, l, c, v]) => ({
-    openTime: Number(t),
-    open: Number(o),
-    high: Number(h),
-    low: Number(l),
-    close: Number(c),
-    volume: Number(v),
-    closeTime: Number(t) + 86400e3 - 1,
-  }));
+  // Try spot first (broader coin availability), fallback to linear perpetuals
+  for (const category of ["spot", "linear"] as const) {
+    const { data } = await axios.get<BybitKlineResponse>(BYBIT_BASE, {
+      params: { category, symbol, interval: bybitInterval, limit: Math.min(limit, 1000) },
+      timeout: 10000,
+    });
+    if (data.retCode === 0 && data.result.list.length > 0) {
+      return data.result.list.reverse().map(([t, o, h, l, c, v]) => ({
+        openTime: Number(t),
+        open: Number(o),
+        high: Number(h),
+        low: Number(l),
+        close: Number(c),
+        volume: Number(v),
+        closeTime: Number(t) + 86400e3 - 1,
+      }));
+    }
+  }
+  throw new Error(`Bybit: no data for ${symbol}`);
 }
+

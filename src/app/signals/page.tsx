@@ -61,18 +61,29 @@ export default function SignalsPage() {
 
   const fetchAssets = useCallback(async (category: AssetCategory, assets: AssetDef[]) => {
     setRefreshing(true);
-    for (const asset of assets) {
-      setLoading((p) => ({ ...p, [asset.symbol]: true }));
-      try {
-        const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=${category}&interval=1d`);
-        if (!res.ok) continue;
-        const d = await res.json();
-        if (d?.signal) setSignals((p) => ({ ...p, [asset.symbol]: d }));
-      } catch { /* skip */ } finally {
-        setLoading((p) => ({ ...p, [asset.symbol]: false }));
-      }
-      // 500ms stagger — Bybit allows 120 req/min
-      await new Promise((r) => setTimeout(r, 500));
+    // Mark all as loading
+    const loadingMap: Record<string, boolean> = {};
+    assets.forEach(a => { loadingMap[a.symbol] = true; });
+    setLoading(p => ({ ...p, ...loadingMap }));
+
+    // Fetch in batches of 5 in parallel — Bybit spot has no rate limit issues
+    const BATCH = 5;
+    for (let i = 0; i < assets.length; i += BATCH) {
+      const batch = assets.slice(i, i + BATCH);
+      await Promise.allSettled(
+        batch.map(async (asset) => {
+          try {
+            const res = await fetch(`/api/market-signals?symbol=${encodeURIComponent(asset.symbol)}&category=${category}&interval=1d`);
+            if (!res.ok) return;
+            const d = await res.json();
+            if (d?.signal) setSignals(p => ({ ...p, [asset.symbol]: d }));
+          } catch { /* skip */ } finally {
+            setLoading(p => ({ ...p, [asset.symbol]: false }));
+          }
+        })
+      );
+      // Small gap between batches for commodities/forex (Yahoo Finance)
+      if (i + BATCH < assets.length) await new Promise(r => setTimeout(r, category === "crypto" ? 200 : 1000));
     }
     setRefreshing(false);
   }, []);
