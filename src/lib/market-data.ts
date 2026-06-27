@@ -287,19 +287,27 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
   }
 
   if (interval === "1d" || interval === "24h") {
-    // CoinGecko OHLC only accepts: 1, 7, 14, 30, 90, 180, 365
-    const needed = Math.max(limit + 10, 50);
-    const days = [1, 7, 14, 30, 90, 180, 365].find((d) => d >= needed) ?? 365;
-    const { data } = await axios.get<[number, number, number, number, number][]>(
-      `${COINGECKO_BASE}/coins/${id}/ohlc`,
+    // market_chart with days > 90 auto-returns daily granularity (free tier)
+    // OHLC returns 4-day candles for large day ranges, causing insufficient data
+    const days = Math.max(limit + 20, 100);
+    const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+      `${COINGECKO_BASE}/coins/${id}/market_chart`,
       { params: { vs_currency: "usd", days } }
     );
-    return data.slice(-limit).map(([t, o, h, l, c]) => ({
-      openTime: t - 86400e3,
-      open: o, high: h, low: l, close: c,
-      volume: 0,
-      closeTime: t - 1,
-    }));
+    const prices  = data.prices.slice(-limit);
+    const volumes = data.total_volumes.slice(-limit);
+    return prices.map(([t, c], i) => {
+      const prev = i > 0 ? prices[i - 1][1] : c;
+      return {
+        openTime: t - 86400e3,
+        open: prev,
+        high: Math.max(c, prev),
+        low: Math.min(c, prev),
+        close: c,
+        volume: volumes[i]?.[1] ?? 0,
+        closeTime: t - 1,
+      };
+    });
   }
 
   // 1h / 30m — hourly market_chart

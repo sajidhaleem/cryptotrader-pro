@@ -71,8 +71,8 @@ export default function SignalsPage() {
       } catch { /* skip */ } finally {
         setLoading((p) => ({ ...p, [asset.symbol]: false }));
       }
-      // Stagger requests to avoid rate limits
-      await new Promise((r) => setTimeout(r, 300));
+      // 2s stagger keeps us under CoinGecko free tier (30 req/min)
+      await new Promise((r) => setTimeout(r, 2000));
     }
     setRefreshing(false);
   }, []);

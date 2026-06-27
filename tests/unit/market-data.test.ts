@@ -196,16 +196,22 @@ describe("getKlinesCG — 4h interval", () => {
 });
 
 describe("getKlinesCG — 1d interval", () => {
-  const makeOhlcResponse = (count: number) =>
-    Array.from({ length: count }, (_, i) => [
-      Date.now() + i * 86400e3,
-      49000, 51000, 48000, 50000,
-    ] as [number, number, number, number, number]);
+  const makeDailyResponse = (count: number) => ({
+    prices: Array.from({ length: count }, (_, i) => [Date.now() + i * 86400e3, 50000 + i * 10] as [number, number]),
+    total_volumes: Array.from({ length: count }, (_, i) => [Date.now() + i * 86400e3, 1e9] as [number, number]),
+  });
 
   it("returns Kline array for 1d interval", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeOhlcResponse(110) });
+    mockAxios.get = vi.fn().mockResolvedValue({ data: makeDailyResponse(120) });
     const klines = await getKlinesCG("BTCUSDT", "1d", 100);
     expect(klines.length).toBeLessThanOrEqual(100);
+  });
+
+  it("uses market_chart endpoint for 1d", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({ data: makeDailyResponse(120) });
+    await getKlinesCG("BTCUSDT", "1d", 100);
+    const url = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain("market_chart");
   });
 });
 
