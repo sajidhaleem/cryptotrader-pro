@@ -71,8 +71,8 @@ export default function SignalsPage() {
       } catch { /* skip */ } finally {
         setLoading((p) => ({ ...p, [asset.symbol]: false }));
       }
-      // 2s stagger keeps us under CoinGecko free tier (30 req/min)
-      await new Promise((r) => setTimeout(r, 2000));
+      // 500ms stagger — Bybit allows 120 req/min
+      await new Promise((r) => setTimeout(r, 500));
     }
     setRefreshing(false);
   }, []);

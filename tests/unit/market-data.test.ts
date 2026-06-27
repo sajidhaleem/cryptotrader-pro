@@ -10,6 +10,7 @@ import {
   get24hrStatsCG,
   get24hrStatsBatchCG,
   getKlinesCG,
+  getKlinesBybit,
   getFearGreedIndex,
   getNewsSentiment,
   COINGECKO_IDS,
@@ -218,6 +219,48 @@ describe("getKlinesCG — 1d interval", () => {
 describe("getKlinesCG — unsupported symbol", () => {
   it("throws for unsupported symbol", async () => {
     await expect(getKlinesCG("FAKECOIN", "1h", 50)).rejects.toThrow("Unsupported symbol");
+  });
+});
+
+describe("getKlinesBybit", () => {
+  function makeBybitResponse(count: number) {
+    // Bybit returns newest-first: [timestamp, open, high, low, close, volume, turnover]
+    const list = Array.from({ length: count }, (_, i) => [
+      String(Date.now() - (count - 1 - i) * 86400e3),
+      "49000", "51000", "48000", "50000", "1000", "50000000",
+    ] as [string, string, string, string, string, string, string]).reverse();
+    return { retCode: 0, retMsg: "OK", result: { list } };
+  }
+
+  it("returns Kline array in chronological order", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({ data: makeBybitResponse(200) });
+    const klines = await getKlinesBybit("BTCUSDT", "1d", 200);
+    expect(klines).toHaveLength(200);
+    expect(klines[0].openTime).toBeLessThan(klines[1].openTime);
+  });
+
+  it("maps OHLCV fields correctly", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({ data: makeBybitResponse(10) });
+    const klines = await getKlinesBybit("BTCUSDT", "1d", 10);
+    expect(klines[0].open).toBe(49000);
+    expect(klines[0].high).toBe(51000);
+    expect(klines[0].low).toBe(48000);
+    expect(klines[0].close).toBe(50000);
+    expect(klines[0].volume).toBe(1000);
+  });
+
+  it("throws when Bybit returns non-zero retCode", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({
+      data: { retCode: 10001, retMsg: "Invalid symbol", result: { list: [] } },
+    });
+    await expect(getKlinesBybit("INVALID", "1d", 100)).rejects.toThrow("Bybit API error");
+  });
+
+  it("calls Bybit endpoint (not CoinGecko)", async () => {
+    mockAxios.get = vi.fn().mockResolvedValue({ data: makeBybitResponse(10) });
+    await getKlinesBybit("BTCUSDT", "1d", 10);
+    const url = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain("bybit.com");
   });
 });
 

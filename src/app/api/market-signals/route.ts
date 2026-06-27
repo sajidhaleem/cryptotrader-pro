@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getKlinesCG } from "@/lib/market-data";
+import { getKlinesBybit, getKlinesCG } from "@/lib/market-data";
 import { analyzeSignals } from "@/lib/signals";
 import { CRYPTO_ASSETS, COMMODITY_ASSETS, FOREX_ASSETS, type AssetCategory } from "@/lib/market-signals-types";
 import axios from "axios";
@@ -45,7 +45,13 @@ export async function GET(req: NextRequest) {
     let price: number;
 
     if (category === "crypto") {
-      const klines = await getKlinesCG(symbol, interval === "1d" ? "1d" : interval, 100);
+      // Try Bybit first (no geo-block, 120 req/min) → fallback CoinGecko
+      let klines;
+      try {
+        klines = await getKlinesBybit(symbol, "1d", 200);
+      } catch {
+        klines = await getKlinesCG(symbol, "1d", 100);
+      }
       closes = klines.map((k) => k.close);
       price  = klines[klines.length - 1].close;
     } else {

@@ -63,6 +63,13 @@ beforeEach(async () => {
   // Default CoinGecko call sequence: market_chart → ohlc → simple/price
   // Match any coinId in simple/price response so both BTC and ETH tests work
   mockAxios.get = vi.fn().mockImplementation(async (url: string, opts?: { params?: { ids?: string } }) => {
+    if (url.includes("bybit.com")) {
+      // Bybit 4h kline response (newest-first list)
+      const list = makeOhlcData(100).map(([t, o, h, l, c]) => [
+        String(t), String(o), String(h), String(l), String(c), "1000", "50000000",
+      ]);
+      return { data: { retCode: 0, retMsg: "OK", result: { list } } };
+    }
     if (url.includes("market_chart")) return { data: makeHourlyData(200) };
     if (url.includes("/ohlc")) return { data: makeOhlcData(50) };
     if (url.includes("simple/price")) {

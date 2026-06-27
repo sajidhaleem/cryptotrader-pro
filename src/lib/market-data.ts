@@ -331,3 +331,38 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
     };
   });
 }
+
+// ─── Bybit Public Market API (primary crypto source — no geo-block, 120 req/min) ───
+// No API key required. Returns USDT perpetual klines for any BTCUSDT-style symbol.
+const BYBIT_BASE = "https://api.bybit.com/v5/market/kline";
+
+const BYBIT_INTERVAL: Record<string, string> = {
+  "1m": "1", "5m": "5", "15m": "15", "30m": "30",
+  "1h": "60", "4h": "240", "12h": "720",
+  "1d": "D", "24h": "D", "1w": "W", "1M": "M",
+};
+
+interface BybitKlineResponse {
+  retCode: number;
+  retMsg: string;
+  result: { list: [string, string, string, string, string, string, string][] };
+}
+
+export async function getKlinesBybit(symbol: string, interval: string, limit: number): Promise<Kline[]> {
+  const bybitInterval = BYBIT_INTERVAL[interval] ?? "D";
+  const { data } = await axios.get<BybitKlineResponse>(BYBIT_BASE, {
+    params: { category: "linear", symbol, interval: bybitInterval, limit: Math.min(limit, 1000) },
+    timeout: 10000,
+  });
+  if (data.retCode !== 0) throw new Error(`Bybit API error ${data.retCode}: ${data.retMsg}`);
+  // Bybit returns newest-first; reverse to chronological order
+  return data.result.list.reverse().map(([t, o, h, l, c, v]) => ({
+    openTime: Number(t),
+    open: Number(o),
+    high: Number(h),
+    low: Number(l),
+    close: Number(c),
+    volume: Number(v),
+    closeTime: Number(t) + 86400e3 - 1,
+  }));
+}

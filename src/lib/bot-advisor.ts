@@ -6,7 +6,7 @@ import { callNIM, DEFAULT_NIM_MODEL, type NimModelId } from "./nvidia-nim";
 import { callKimi, DEFAULT_KIMI_MODEL, type KimiModelId } from "./kimi";
 import { RSI, BollingerBands, MACD, ADX } from "technicalindicators";
 import axios from "axios";
-import { COINGECKO_IDS } from "./market-data";
+import { COINGECKO_IDS, getKlinesBybit } from "./market-data";
 import { fetchNewsContext, type NewsContext } from "./news-feed";
 
 export type AssetCategory = "crypto" | "commodity" | "forex";
@@ -65,21 +65,37 @@ async function cgGet<T>(url: string, params: Record<string, unknown>): Promise<T
   }
 }
 
-// ── Crypto snapshot via CoinGecko ─────────────────────────────────────────────
+// ── Crypto snapshot (Bybit primary, CoinGecko fallback) ───────────────────────
 async function buildCryptoSnapshot(symbol: string): Promise<MarketSnapshot> {
   const coinId = COINGECKO_IDS[symbol];
   if (!coinId) throw new Error(`Unsupported crypto symbol: ${symbol}`);
 
+  // 1h data — CoinGecko market_chart (Bybit 1h: too many candles needed)
   const chart1h = await cgGet<{ prices: [number, number][]; total_volumes: [number, number][] }>(
     `${CG}/coins/${coinId}/market_chart`,
     { vs_currency: "usd", days: 5, interval: "hourly" }
   );
   await sleep(400);
-  const ohlc4h = await cgGet<[number, number, number, number, number][]>(
-    `${CG}/coins/${coinId}/ohlc`,
-    { vs_currency: "usd", days: 7 }
-  );
+
+  // 4h data — Bybit first (real OHLCV), fallback CoinGecko OHLC
+  let closes4h: number[], highs4h: number[], lows4h: number[];
+  try {
+    const klines4h = await getKlinesBybit(symbol, "4h", 100);
+    closes4h = klines4h.map(k => k.close);
+    highs4h  = klines4h.map(k => k.high);
+    lows4h   = klines4h.map(k => k.low);
+  } catch {
+    await sleep(400);
+    const ohlc4h = await cgGet<[number, number, number, number, number][]>(
+      `${CG}/coins/${coinId}/ohlc`,
+      { vs_currency: "usd", days: 7 }
+    );
+    closes4h = ohlc4h.map(c => c[4]);
+    highs4h  = ohlc4h.map(c => c[2]);
+    lows4h   = ohlc4h.map(c => c[3]);
+  }
   await sleep(400);
+
   const priceData = await cgGet<Record<string, { usd: number; usd_24h_change: number }>>(
     `${CG}/simple/price`,
     { ids: coinId, vs_currencies: "usd", include_24hr_change: true }
@@ -87,9 +103,6 @@ async function buildCryptoSnapshot(symbol: string): Promise<MarketSnapshot> {
 
   const closes1h  = chart1h.prices.map(([, p]) => p);
   const volumes1h = chart1h.total_volumes.map(([, v]) => v);
-  const closes4h  = ohlc4h.map(c => c[4]);
-  const highs4h   = ohlc4h.map(c => c[2]);
-  const lows4h    = ohlc4h.map(c => c[3]);
 
   const coinInfo = priceData[coinId];
   if (!coinInfo) throw new Error(`CoinGecko returned no data for ${symbol}`);
