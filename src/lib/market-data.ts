@@ -287,7 +287,9 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
   }
 
   if (interval === "1d" || interval === "24h") {
-    const days = Math.max(limit + 10, 90);
+    // CoinGecko OHLC only accepts: 1, 7, 14, 30, 90, 180, 365
+    const needed = Math.max(limit + 10, 50);
+    const days = [1, 7, 14, 30, 90, 180, 365].find((d) => d >= needed) ?? 365;
     const { data } = await axios.get<[number, number, number, number, number][]>(
       `${COINGECKO_BASE}/coins/${id}/ohlc`,
       { params: { vs_currency: "usd", days } }
