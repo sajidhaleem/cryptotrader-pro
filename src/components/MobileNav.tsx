@@ -6,32 +6,33 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield,
+  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp,
 } from "lucide-react";
 
 // Always visible in the bottom bar
 const primaryTabs = [
   { href: "/dashboard", label: "Home",    icon: LayoutDashboard, exact: true },
-  { href: "/trade",     label: "Trade",   icon: Zap },
-  { href: "/bots",      label: "Bots",    icon: Bot },
   { href: "/signals",   label: "Signals", icon: LineChart },
+  { href: "/psx",       label: "PSX",     icon: TrendingUp, psx: true },
+  { href: "/bots",      label: "Bots",    icon: Bot },
 ];
 
 // Grouped items in the More sheet
 const navGroups = [
   {
-    label: "Market",
+    label: "Crypto",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-      { href: "/signals",   label: "Signals",   icon: LineChart },
-      { href: "/charts",    label: "Charts",    icon: BarChart2, badge: "NEW" },
+      { href: "/dashboard", label: "Dashboard",  icon: LayoutDashboard, exact: true },
+      { href: "/signals",   label: "Signals",    icon: LineChart },
+      { href: "/charts",    label: "Charts",     icon: BarChart2, badge: "NEW" },
+      { href: "/trade",     label: "Trade",      icon: Zap },
+      { href: "/bots",      label: "Bots",       icon: Bot },
     ],
   },
   {
-    label: "Trading",
+    label: "Pakistan",
     items: [
-      { href: "/trade", label: "Trade", icon: Zap },
-      { href: "/bots",  label: "Bots",  icon: Bot },
+      { href: "/psx", label: "PSX Market", icon: TrendingUp, badge: "PKR", psx: true },
     ],
   },
   {
@@ -72,15 +73,18 @@ export default function MobileNav() {
         {primaryTabs.map((tab) => {
           const Icon = tab.icon;
           const active = isActive(tab.href, tab.exact);
+          const isPsx = (tab as { psx?: boolean }).psx;
+          const activeColor = isPsx ? "text-amber-400" : "text-[#00ff88]";
+          const inactiveColor = "text-[#475569] hover:text-[#94a3b8]";
           return (
             <Link
               key={tab.href}
               href={tab.href}
               className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-colors ${
-                active ? "text-[#00ff88]" : "text-[#475569] hover:text-[#94a3b8]"
+                active ? activeColor : inactiveColor
               }`}
             >
-              <Icon className={`h-5 w-5 ${active ? "text-[#00ff88]" : "text-[#475569]"}`} />
+              <Icon className={`h-5 w-5 ${active ? activeColor : "text-[#475569]"}`} />
               {tab.label}
             </Link>
           );
@@ -149,6 +153,8 @@ export default function MobileNav() {
                       {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isActive(item.href, (item as { exact?: boolean }).exact);
+                        const isPsx = (item as { psx?: boolean }).psx;
+                        const badgeVal = (item as { badge?: string }).badge;
                         return (
                           <Link
                             key={item.href}
@@ -156,15 +162,29 @@ export default function MobileNav() {
                             onClick={() => setSheetOpen(false)}
                             className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all ${
                               active
-                                ? "bg-[#00ff88]/15 text-[#00ff88]"
-                                : "text-[#64748b] hover:bg-white/5 hover:text-white"
+                                ? isPsx
+                                  ? "bg-amber-500/15 text-amber-400"
+                                  : "bg-[#00ff88]/15 text-[#00ff88]"
+                                : isPsx
+                                  ? "text-[#64748b] hover:bg-amber-500/8 hover:text-amber-300"
+                                  : "text-[#64748b] hover:bg-white/5 hover:text-white"
                             }`}
                           >
-                            <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-[#00ff88]" : "text-[#475569]"}`} />
+                            <Icon
+                              className={`h-[18px] w-[18px] shrink-0 ${
+                                active
+                                  ? isPsx ? "text-amber-400" : "text-[#00ff88]"
+                                  : isPsx ? "text-amber-700" : "text-[#475569]"
+                              }`}
+                            />
                             {item.label}
-                            {"badge" in item && item.badge && !active && (
-                              <span className="ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#7c3aed]/20 text-[#a78bfa]">
-                                {item.badge}
+                            {badgeVal && !active && (
+                              <span className={`ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                                isPsx
+                                  ? "bg-amber-500/15 text-amber-400"
+                                  : "bg-[#7c3aed]/20 text-[#a78bfa]"
+                              }`}>
+                                {badgeVal}
                               </span>
                             )}
                           </Link>
