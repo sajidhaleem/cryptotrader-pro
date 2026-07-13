@@ -4,6 +4,7 @@ import { RSI, MACD } from "technicalindicators";
 import { prisma } from "./db";
 import { placeOrder } from "./binance";
 import { getPriceCG, getKlinesCG } from "./market-data";
+import { executePaperTrade } from "./paper-trading";
 import { decrypt } from "./utils";
 
 // Binance enforces $10 minimum notional per order — we use $15 as safety buffer.
@@ -38,21 +39,14 @@ async function paperBuy(userId: string, symbol: string, amount: number): Promise
 
   const price    = await getPriceCG(symbol);
   const quantity = safeQuantity(amount / price, price);
-  const total    = amount * 1.001; // include 0.1% fee
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { paperBalance: true } });
-  if (!user || user.paperBalance < total) {
-    return { success: false, message: `Insufficient paper balance ($${(user?.paperBalance ?? 0).toFixed(2)})` };
+  const result = await executePaperTrade(userId, symbol, "BUY", quantity);
+  if (!result.success) {
+    return { success: false, message: result.message };
   }
 
-  await prisma.$transaction([
-    prisma.paperTrade.create({
-      data: { userId, symbol, side: "BUY", quantity, price, total: amount, pnl: 0, status: "FILLED" },
-    }),
-    prisma.user.update({ where: { id: userId }, data: { paperBalance: { decrement: total } } }),
-  ]);
-
-  return { success: true, message: `Paper BUY ${quantity.toFixed(6)} ${symbol} @ $${price.toFixed(2)}` };
+  const fillPrice = result.trade?.price ?? price;
+  return { success: true, message: `Paper BUY ${quantity.toFixed(6)} ${symbol} @ $${fillPrice.toFixed(2)}` };
 }
 
 async function liveBuy(userId: string, symbol: string, amount: number): Promise<{ success: boolean; message: string }> {
@@ -82,6 +76,23 @@ async function doBuy(userId: string, symbol: string, amount: number, mode?: stri
   return mode === "LIVE" ? liveBuy(userId, symbol, amount) : paperBuy(userId, symbol, amount);
 }
 
+// Re-fetches the bot's current config, stamps lastExecuted, and increments totalTrades.
+// Shared by all strategy executors after a successful buy.
+async function persistBotExecution(
+  botId: string,
+  config: object,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
+  const bot = await prisma.bot.findUnique({ where: { id: botId } });
+  await prisma.bot.update({
+    where: { id: botId },
+    data: {
+      config: { ...(bot?.config as object ?? {}), ...config, lastExecuted: new Date().toISOString(), ...extra },
+      totalTrades: { increment: 1 },
+    },
+  });
+}
+
 // ─── Strategy Executors ───────────────────────────────────────────────────────
 
 export async function executeDCA(botId: string, userId: string, symbol: string, config: DCAConfig): Promise<string> {
@@ -89,14 +100,7 @@ export async function executeDCA(botId: string, userId: string, symbol: string, 
 
   const result = await doBuy(userId, symbol, config.amount, config.mode);
   if (result.success) {
-    const bot = await prisma.bot.findUnique({ where: { id: botId } });
-    await prisma.bot.update({
-      where: { id: botId },
-      data: {
-        config: { ...(bot?.config as object ?? {}), ...config, lastExecuted: new Date().toISOString() },
-        totalTrades: { increment: 1 },
-      },
-    });
+    await persistBotExecution(botId, config);
   }
   return result.message;
 }
@@ -115,14 +119,7 @@ export async function executeRSIBot(botId: string, userId: string, symbol: strin
   if (rsi < config.rsiLow) {
     const result = await doBuy(userId, symbol, config.amount, config.mode);
     if (result.success) {
-      const bot = await prisma.bot.findUnique({ where: { id: botId } });
-      await prisma.bot.update({
-        where: { id: botId },
-        data: {
-          config: { ...(bot?.config as object ?? {}), ...config, lastExecuted: new Date().toISOString() },
-          totalTrades: { increment: 1 },
-        },
-      });
+      await persistBotExecution(botId, config);
     }
     return `RSI ${rsi.toFixed(1)} < ${config.rsiLow} → ${result.message}`;
   }
@@ -155,13 +152,7 @@ export async function executeMACDBot(botId: string, userId: string, symbol: stri
   if (prevHist <= 0 && hist > 0) {
     const result = await doBuy(userId, symbol, config.amount, config.mode);
     if (result.success) {
-      await prisma.bot.update({
-        where: { id: botId },
-        data: {
-          config: { ...baseConfig, ...config, lastExecuted: new Date().toISOString(), lastHistogram: hist },
-          totalTrades: { increment: 1 },
-        },
-      });
+      await persistBotExecution(botId, config, { lastHistogram: hist });
     }
     return `MACD bullish cross → ${result.message}`;
   }
@@ -206,14 +197,7 @@ export async function executeGridBot(botId: string, userId: string, symbol: stri
 
   const result = await doBuy(userId, symbol, config.amount, config.mode);
   if (result.success) {
-    const bot = await prisma.bot.findUnique({ where: { id: botId } });
-    await prisma.bot.update({
-      where: { id: botId },
-      data: {
-        config: { ...(bot?.config as object ?? {}), ...config, lastExecuted: new Date().toISOString(), lastGridLevel: level },
-        totalTrades: { increment: 1 },
-      },
-    });
+    await persistBotExecution(botId, config, { lastGridLevel: level });
   }
   return `Grid level ${level} ($${gridLine.toFixed(2)}): ${result.message}`;
 }

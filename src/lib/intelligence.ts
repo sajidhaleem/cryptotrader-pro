@@ -297,7 +297,6 @@ function candlePatternScore(klines: Kline[]): FactorScore {
   }
 
   return neutral("CANDLE");
-  void p2; // p2 used above in morning star
 }
 
 function fearGreedScore(value: number, label: string): FactorScore {

@@ -137,33 +137,6 @@ export async function getNewsSentiment(symbol: string): Promise<{ score: number;
   }
 }
 
-// Volume trend: compare current 24h volume vs 7-day average from CoinGecko
-export async function getVolumeTrend(symbol: string): Promise<{ ratio: number; trend: "INCREASING" | "DECREASING" | "STABLE" }> {
-  const coinId = SYMBOL_MAP[symbol];
-  if (!coinId) return { ratio: 1, trend: "STABLE" };
-
-  try {
-    const data = await fetch(
-      `${COINGECKO_BASE}/coins/${coinId}/market_chart?vs_currency=usd&days=7&interval=daily`,
-      { next: { revalidate: 3600 } }
-    ).then((r) => r.json());
-
-    const volumes: number[] = (data?.total_volumes ?? []).map(([, v]: [number, number]) => v);
-    if (volumes.length < 2) return { ratio: 1, trend: "STABLE" };
-
-    const avgVolume = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / (volumes.length - 1);
-    const currentVolume = volumes[volumes.length - 1];
-    const ratio = currentVolume / avgVolume;
-
-    return {
-      ratio,
-      trend: ratio > 1.2 ? "INCREASING" : ratio < 0.8 ? "DECREASING" : "STABLE",
-    };
-  } catch {
-    return { ratio: 1, trend: "STABLE" };
-  }
-}
-
 // ─── Drop-in replacements for Binance public API (geo-blocked on US servers) ───
 
 export const COINGECKO_IDS = SYMBOL_MAP;
