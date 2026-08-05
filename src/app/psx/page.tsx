@@ -101,6 +101,51 @@ function sigStyle(sig: string) {
   return SIG[sig as keyof typeof SIG] ?? NEUTRAL_SIG;
 }
 
+// Turns one raw technical-indicator reading into a plain-language reason,
+// so "why" a stock is flagged doesn't require knowing what MACD stands for.
+function explainIndicator(ind: { name: string; value: string; signal: string }): string {
+  switch (ind.name) {
+    case "RSI":
+      if (ind.signal === "BUY") return `RSI at ${ind.value} — oversold, often a buying opportunity`;
+      if (ind.signal === "SELL") return `RSI at ${ind.value} — overbought, may be due for a pullback`;
+      return `RSI at ${ind.value} — neutral, no strong signal either way`;
+    case "MACD":
+      if (ind.signal === "BUY") return "MACD trending bullish — upward momentum building";
+      if (ind.signal === "SELL") return "MACD trending bearish — downward momentum building";
+      return "MACD flat — no clear momentum";
+    case "Bollinger Bands":
+      if (ind.value === "Below Lower") return "Price below its lower Bollinger Band — statistically cheap vs its recent range";
+      if (ind.value === "Above Upper") return "Price above its upper Bollinger Band — statistically expensive vs its recent range";
+      return "Price sitting within its normal recent trading range";
+    case "EMA Cross":
+      if (ind.value === "20 > 50") return "20-day average price above the 50-day — a bullish crossover";
+      if (ind.value === "20 < 50") return "20-day average price below the 50-day — a bearish crossover";
+      return "Short and long-term averages aligned, no crossover";
+    case "Price vs EMA50":
+      if (ind.value === "Above") return "Currently trading above its 50-day average price";
+      return "Currently trading below its 50-day average price";
+    default:
+      return `${ind.name}: ${ind.value}`;
+  }
+}
+
+function ReasonList({ indicators }: { indicators: { name: string; value: string; signal: string }[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {indicators.map((ind) => {
+        const color = ind.signal === "BUY" ? "text-[#00ff88]" : ind.signal === "SELL" ? "text-red-400" : "text-[#64748b]";
+        const mark = ind.signal === "BUY" ? "▲" : ind.signal === "SELL" ? "▼" : "—";
+        return (
+          <li key={ind.name} className="flex items-start gap-2 text-[11px] text-[#94a3b8] leading-relaxed">
+            <span className={`flex-shrink-0 font-bold ${color}`}>{mark}</span>
+            {explainIndicator(ind)}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function rs(n: number): string {
   return `₨${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -493,11 +538,12 @@ function AddHoldingForm({ onAdded, onClose }: { onAdded: () => void; onClose: ()
 /* ─── Holdings table ─────────────────────────────────────────────── */
 
 function HoldingsTable({
-  holdings, totalValue, onDelete,
+  holdings, totalValue, onDelete, signals,
 }: {
   holdings: PricedHolding[];
   totalValue: number;
   onDelete: (id: string) => void;
+  signals: Record<string, PSXSignalResponse>;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -527,6 +573,8 @@ function HoldingsTable({
               const plUp = h.unrealizedPL >= 0;
               const up = h.change1d >= 0;
               const expanded = expandedId === h.id;
+              const holdingSignal = signals[`${h.symbol}.KA`]?.signal;
+              const holdingSty = holdingSignal ? sigStyle(holdingSignal.signal) : null;
               return (
                 <Fragment key={h.id}>
                   <tr
@@ -539,7 +587,14 @@ function HoldingsTable({
                           <span className="text-[10px] font-black text-amber-400">{h.symbol.slice(0, 2)}</span>
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-white truncate">{h.symbol}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-white truncate">{h.symbol}</p>
+                            {holdingSty && (
+                              <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold ${holdingSty.bg} ${holdingSty.text}`}>
+                                {holdingSty.label}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-[#94a3b8] truncate max-w-[140px]">{h.company}</p>
                         </div>
                       </div>
@@ -594,6 +649,19 @@ function HoldingsTable({
                                 <Trash2 className="w-3.5 h-3.5" /> Remove
                               </button>
                             </div>
+                            <div className="pb-3 pt-1 border-t border-white/5">
+                              <p className="text-[11px] font-bold text-white uppercase tracking-wider mb-2 mt-2">
+                                What the signal is based on
+                              </p>
+                              {holdingSignal ? (
+                                <ReasonList indicators={holdingSignal.indicators} />
+                              ) : (
+                                <p className="text-[11px] text-[#64748b]">
+                                  No live technical signal for {h.symbol} — either it&apos;s outside the 20 tracked
+                                  blue-chip stocks or Yahoo Finance isn&apos;t returning data for it right now.
+                                </p>
+                              )}
+                            </div>
                           </motion.div>
                         </td>
                       </tr>
@@ -605,6 +673,63 @@ function HoldingsTable({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/* ─── Worth Investing In ─────────────────────────────────────────── */
+
+function TopPicks({ signals }: { signals: Record<string, PSXSignalResponse> }) {
+  const picks = Object.values(signals)
+    .filter((d) => d.signal?.signal === "STRONG_BUY" || d.signal?.signal === "BUY")
+    .sort((a, b) => b.signal.strength - a.signal.strength);
+
+  return (
+    <div>
+      <p className="text-xs font-bold text-white uppercase tracking-wider mb-1">Worth Investing In</p>
+      <p className="text-[11px] text-[#64748b] mb-3">
+        Stocks currently showing a net-bullish technical signal, ranked by strength — not a guarantee, just what the
+        indicators below say right now.
+      </p>
+
+      {picks.length === 0 ? (
+        <div className="rounded-xl border border-[#1e2130] bg-[#0f1117] p-6 text-center">
+          <p className="text-sm text-[#94a3b8]">
+            Nothing is showing a buy signal at the moment. Check back after the next refresh, or browse Market
+            Signals below for the full picture.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {picks.map((d, idx) => {
+            const sty = sigStyle(d.signal.signal);
+            const short = d.symbol.replace(".KA", "").replace("^", "");
+            return (
+              <motion.div
+                key={d.symbol}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.04 }}
+                className="rounded-xl border border-[#1e2130] bg-[#0f1117] p-4"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="min-w-0">
+                    <p className="font-black text-white">{short}</p>
+                    <p className="text-[11px] text-[#94a3b8] truncate">{d.label}</p>
+                  </div>
+                  <span className={`flex-shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-bold ${sty.bg} ${sty.border} ${sty.text}`}>
+                    {sty.label}
+                  </span>
+                </div>
+                <p className="text-lg font-black text-white font-numeric tabular-nums mb-2">
+                  ₨{d.price.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <ReasonList indicators={d.signal.indicators} />
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -924,8 +1049,11 @@ export default function PSXPage() {
         </div>
       )}
       {data && (
-        <HoldingsTable holdings={data.holdings} totalValue={totalValue} onDelete={handleDelete} />
+        <HoldingsTable holdings={data.holdings} totalValue={totalValue} onDelete={handleDelete} signals={signals} />
       )}
+
+      {/* ── Worth Investing In ── */}
+      <TopPicks signals={signals} />
 
       {/* ── Market breadth ── */}
       <AnimatePresence>
@@ -1094,17 +1222,7 @@ export default function PSXPage() {
                                 className="overflow-hidden mt-3 pt-3 border-t border-white/5 space-y-2"
                               >
                                 <p className="text-[10px] text-[#64748b] leading-relaxed">{d.signal.summary}</p>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {d.signal.indicators.slice(0, 4).map((ind) => (
-                                    <div key={ind.name} className="bg-[#1a1f2e] rounded-lg px-2 py-1.5">
-                                      <p className="text-[8px] text-[#475569] uppercase tracking-wider">{ind.name}</p>
-                                      <p className={`text-[10px] font-bold mt-0.5 ${
-                                        ind.signal === "bullish" ? "text-[#00ff88]" :
-                                        ind.signal === "bearish" ? "text-red-400" : "text-amber-400"
-                                      }`}>{ind.value}</p>
-                                    </div>
-                                  ))}
-                                </div>
+                                <ReasonList indicators={d.signal.indicators} />
                               </motion.div>
                             )}
                           </AnimatePresence>
