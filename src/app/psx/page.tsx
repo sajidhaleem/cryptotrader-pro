@@ -201,7 +201,7 @@ function StatTile({
   return (
     <div className="rounded-2xl border border-[#1e2130] bg-[#0f1117] p-4 flex flex-col">
       <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#64748b]">{label}</p>
-      <p className="text-xl font-black text-white tabular-nums mt-1.5 leading-none truncate">{value}</p>
+      <p className="text-xl font-black text-white font-numeric tabular-nums mt-1.5 leading-none truncate">{value}</p>
       {sub && <p className="text-[11px] text-[#94a3b8] mt-1 truncate">{sub}</p>}
       <div className="mt-3 h-10">{viz}</div>
       {delta !== undefined && (
@@ -227,7 +227,7 @@ function TrendTooltip({ active, payload, avgBuyRate }: {
   return (
     <div className="rounded-xl border border-[#1e2130] bg-[#0f1117] px-3.5 py-3 shadow-xl">
       <p className="text-[10px] text-[#64748b] font-semibold mb-1">{p.dateLabel}</p>
-      <p className="text-lg font-black text-white tabular-nums">₨{p.close.toFixed(2)}</p>
+      <p className="text-lg font-black text-white font-numeric tabular-nums">₨{p.close.toFixed(2)}</p>
       <p className={`text-[11px] font-bold mt-0.5 ${positive ? "text-[#00ff88]" : "text-red-400"}`}>
         {positive ? "+" : ""}{p.chg.toFixed(2)}% vs prior session
       </p>
@@ -299,10 +299,10 @@ function PriceTrendChart({
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={chartData} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="#1e2130" vertical={false} />
-            <XAxis dataKey="dateLabel" tick={{ fill: "#475569", fontSize: 10 }} axisLine={{ stroke: "#1e2130" }} tickLine={false} minTickGap={40} />
+            <XAxis dataKey="dateLabel" tick={{ fill: "#475569", fontSize: 10, fontFamily: "var(--font-atkinson)" }} axisLine={{ stroke: "#1e2130" }} tickLine={false} minTickGap={40} />
             <YAxis
               domain={["auto", "auto"]}
-              tick={{ fill: "#475569", fontSize: 10 }}
+              tick={{ fill: "#475569", fontSize: 10, fontFamily: "var(--font-atkinson)" }}
               axisLine={false}
               tickLine={false}
               width={54}
@@ -545,7 +545,7 @@ function HoldingsTable({
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <p className="font-bold text-white tabular-nums">{rs(h.marketValue)}</p>
+                      <p className="font-bold text-white font-numeric tabular-nums">{rs(h.marketValue)}</p>
                       {h.priceSource === "live" ? (
                         <p className={`text-[10px] ${up ? "text-[#00ff88]" : "text-red-400"}`}>
                           {up ? "+" : ""}{h.change1d.toFixed(1)}% today
@@ -555,20 +555,20 @@ function HoldingsTable({
                       )}
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <p className="font-bold text-white tabular-nums">{pct.toFixed(1)}%</p>
+                      <p className="font-bold text-white font-numeric tabular-nums">{pct.toFixed(1)}%</p>
                       <div className="w-16 h-1 rounded-full bg-[#1a1f2e] mt-1 ml-auto overflow-hidden">
                         <div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <p className={`font-bold tabular-nums ${plUp ? "text-[#00ff88]" : "text-red-400"}`}>
+                      <p className={`font-bold font-numeric tabular-nums ${plUp ? "text-[#00ff88]" : "text-red-400"}`}>
                         {plUp ? "+" : ""}{rs(h.unrealizedPL)}
                       </p>
                       <p className={`text-[10px] ${plUp ? "text-[#00ff88]" : "text-red-400"}`}>
                         {plUp ? "+" : ""}{h.unrealizedPLPct.toFixed(1)}%
                       </p>
                     </td>
-                    <td className="px-3 py-3 text-right text-[#94a3b8] tabular-nums hidden sm:table-cell">{rs(h.avgBuyRate)}</td>
+                    <td className="px-3 py-3 text-right text-[#94a3b8] font-numeric tabular-nums hidden sm:table-cell">{rs(h.avgBuyRate)}</td>
                     <td className="px-3">
                       <ChevronDown className={`w-4 h-4 text-[#475569] transition-transform ${expanded ? "rotate-180" : ""}`} />
                     </td>
@@ -945,7 +945,7 @@ export default function PSXPage() {
                   key={n}
                   initial={{ scale: 0.7, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className={`text-2xl font-black tabular-nums ${color}`}
+                  className={`text-2xl font-black font-numeric tabular-nums ${color}`}
                 >
                   {n}
                 </motion.p>
@@ -1059,7 +1059,7 @@ export default function PSXPage() {
 
                       {d ? (
                         <>
-                          <p className="text-[17px] font-black text-white tabular-nums mb-2 leading-none">
+                          <p className="text-[17px] font-black text-white font-numeric tabular-nums mb-2 leading-none">
                             ₨{d.price.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
 

@@ -5,6 +5,7 @@ import axios from "axios";
 interface YahooChartResult {
   meta: {
     regularMarketPrice: number;
+    regularMarketTime?: number;
     previousClose?: number;
     regularMarketChangePercent?: number;
     regularMarketChange?: number;
@@ -54,10 +55,20 @@ export async function fetchPsxQuote(symbol: string): Promise<PsxQuote> {
   });
 
   const closes = history.map((h) => h.close);
-  const price = result.meta.regularMarketPrice;
 
+  // For some thinly-traded PSX tickers, Yahoo's "live" quote (regularMarketPrice)
+  // goes stale for months while the historical daily-close series keeps updating
+  // normally — seen on FFC.KA, where regularMarketTime was frozen ~2 years in the
+  // past. Trust whichever of the two is actually more recent.
+  const last = history[history.length - 1];
+  const prev = history[history.length - 2];
+  const quoteIsStale = last && last.time > (result.meta.regularMarketTime ?? 0);
+
+  const price = quoteIsStale ? last.close : result.meta.regularMarketPrice;
   // Yahoo Finance returns regularMarketChangePercent as a percentage value (e.g. 1.5 = +1.5%)
-  const change1d = result.meta.regularMarketChangePercent ?? 0;
+  const change1d = quoteIsStale
+    ? (prev ? ((last.close - prev.close) / prev.close) * 100 : 0)
+    : (result.meta.regularMarketChangePercent ?? 0);
 
   return { closes, history, price, change1d };
 }
