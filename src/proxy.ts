@@ -14,5 +14,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/psx-portfolio/:path*"],
+  matcher: ["/psx/:path*", "/psx-portfolio/:path*"],
 };
