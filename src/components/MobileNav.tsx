@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp, Briefcase, LogOut,
+  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp, LogOut,
 } from "lucide-react";
 
 // Always visible in the bottom bar
@@ -33,8 +33,7 @@ const navGroups = [
   {
     label: "Pakistan",
     items: [
-      { href: "/psx", label: "PSX Market", icon: TrendingUp, badge: "PKR", psx: true },
-      { href: "/psx-portfolio", label: "My Holdings", icon: Briefcase, psx: true },
+      { href: "/psx", label: "PSX Portfolio", icon: TrendingUp, badge: "PKR", psx: true },
     ],
   },
   {

@@ -14,8 +14,14 @@ interface YahooChartResult {
   indicators: { quote: [{ close: (number | null)[] }] };
 }
 
+export interface PricePoint {
+  time: number; // unix seconds
+  close: number;
+}
+
 export interface PsxQuote {
   closes: number[];
+  history: PricePoint[]; // closes with their trading-day timestamp, same filtering, same order
   price: number;
   change1d: number;
 }
@@ -40,11 +46,18 @@ export async function fetchPsxQuote(symbol: string): Promise<PsxQuote> {
   const rawCloses = result.indicators?.quote?.[0]?.close;
   if (!rawCloses || !result.meta) throw new Error(`Incomplete data for ${symbol}`);
 
-  const closes = rawCloses.filter((c): c is number => c !== null && !isNaN(c));
+  const history: PricePoint[] = [];
+  rawCloses.forEach((c, i) => {
+    if (c !== null && !isNaN(c) && result.timestamp[i] != null) {
+      history.push({ time: result.timestamp[i], close: c });
+    }
+  });
+
+  const closes = history.map((h) => h.close);
   const price = result.meta.regularMarketPrice;
 
   // Yahoo Finance returns regularMarketChangePercent as a percentage value (e.g. 1.5 = +1.5%)
   const change1d = result.meta.regularMarketChangePercent ?? 0;
 
-  return { closes, price, change1d };
+  return { closes, history, price, change1d };
 }

@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const asset = PSX_ASSETS.find(a => a.symbol === symbol);
 
   try {
-    const { closes, price, change1d } = await fetchPsxQuote(symbol);
+    const { closes, history, price, change1d } = await fetchPsxQuote(symbol);
     const signal = analyzeSignals(closes);
 
     return Response.json({
@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
       price,
       change1d,
       signal,
+      history: history.slice(-60), // ~3 trading months, enough for the trend chart
       timestamp: Date.now(),
     });
   } catch (err) {

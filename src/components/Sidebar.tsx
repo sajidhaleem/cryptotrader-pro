@@ -6,20 +6,19 @@ import { motion } from "framer-motion";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  ChevronRight, Brain, Shield, Wallet, BarChart2, TrendingUp, Briefcase, LogOut,
+  ChevronRight, Brain, Shield, Wallet, BarChart2, TrendingUp, LogOut,
 } from "lucide-react";
 
 const nav = [
-  { href: "/dashboard",     label: "Dashboard",   icon: LayoutDashboard, group: "crypto" },
-  { href: "/wallet",        label: "Wallet",       icon: Wallet,          group: "crypto" },
-  { href: "/advisor",       label: "AI Advisor",   icon: Brain,           group: "crypto", badge: "AI" },
-  { href: "/trade",         label: "Trade",        icon: Zap,             group: "crypto" },
-  { href: "/bots",          label: "Bots",         icon: Bot,             group: "crypto" },
-  { href: "/signals",       label: "Signals",      icon: LineChart,       group: "crypto" },
-  { href: "/charts",        label: "Charts",       icon: BarChart2,       group: "crypto", badge: "NEW" },
-  { href: "/psx",           label: "PSX Market",   icon: TrendingUp,      group: "psx",    badge: "PKR" },
-  { href: "/psx-portfolio", label: "My Holdings",  icon: Briefcase,       group: "psx" },
-  { href: "/settings",      label: "Settings",     icon: Settings,        group: "meta" },
+  { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard, group: "crypto" },
+  { href: "/wallet",        label: "Wallet",         icon: Wallet,          group: "crypto" },
+  { href: "/advisor",       label: "AI Advisor",     icon: Brain,           group: "crypto", badge: "AI" },
+  { href: "/trade",         label: "Trade",          icon: Zap,             group: "crypto" },
+  { href: "/bots",          label: "Bots",           icon: Bot,             group: "crypto" },
+  { href: "/signals",       label: "Signals",        icon: LineChart,       group: "crypto" },
+  { href: "/charts",        label: "Charts",         icon: BarChart2,       group: "crypto", badge: "NEW" },
+  { href: "/psx",           label: "PSX Portfolio",  icon: TrendingUp,      group: "psx",    badge: "PKR" },
+  { href: "/settings",      label: "Settings",       icon: Settings,        group: "meta" },
 ];
 
 export default function Sidebar() {
