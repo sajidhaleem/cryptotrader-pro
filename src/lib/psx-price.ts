@@ -37,7 +37,9 @@ export async function fetchPsxQuote(symbol: string): Promise<PsxQuote> {
   const result = data?.chart?.result?.[0];
   if (!result) throw new Error(data?.chart?.error?.description ?? `No data for ${symbol}`);
 
-  const rawCloses = result.indicators.quote[0].close;
+  const rawCloses = result.indicators?.quote?.[0]?.close;
+  if (!rawCloses || !result.meta) throw new Error(`Incomplete data for ${symbol}`);
+
   const closes = rawCloses.filter((c): c is number => c !== null && !isNaN(c));
   const price = result.meta.regularMarketPrice;
 
