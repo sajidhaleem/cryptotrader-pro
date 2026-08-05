@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma, getOwnerId } from "@/lib/db";
 import { fetchPsxQuote } from "@/lib/psx-price";
+import { auth } from "@/lib/auth";
 
 export async function GET() {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
   const userId = await getOwnerId();
   const holdings = await prisma.psxHolding.findMany({
     where: { userId },
@@ -59,6 +63,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
   const userId = await getOwnerId();
   const { symbol, company, quantity, avgBuyRate, form } = await req.json();
 
@@ -91,6 +98,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
   const userId = await getOwnerId();
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");

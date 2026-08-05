@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  ChevronRight, Brain, Shield, Wallet, BarChart2, TrendingUp, Briefcase,
+  ChevronRight, Brain, Shield, Wallet, BarChart2, TrendingUp, Briefcase, LogOut,
 } from "lucide-react";
 
 const nav = [
@@ -147,10 +148,17 @@ export default function Sidebar() {
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00ff88]/30 to-[#7c3aed]/30 flex items-center justify-center flex-shrink-0 border border-white/10">
             <Shield className="w-4 h-4 text-[#00ff88]" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-white">Personal Account</p>
-            <p className="text-xs text-[#64748b]">Private · Encrypted</p>
+            <p className="text-xs text-[#64748b]">Private &middot; Encrypted</p>
           </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            aria-label="Sign out"
+            className="flex-shrink-0 p-1.5 rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 

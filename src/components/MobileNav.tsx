@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp, Briefcase,
+  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp, Briefcase, LogOut,
 } from "lucide-react";
 
 // Always visible in the bottom bar
@@ -208,6 +209,13 @@ export default function MobileNav() {
                       Private
                     </span>
                   </div>
+                  <button
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    aria-label="Sign out"
+                    className="flex-shrink-0 p-2 rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </motion.div>
