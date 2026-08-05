@@ -13,6 +13,7 @@ import {
   SECTOR_COLORS,
   type PSXSector,
 } from "@/lib/psx-types";
+import HoldingsWidget from "@/components/psx/HoldingsWidget";
 
 /* ─── Types ─────────────────────────────────────────────────────── */
 
@@ -357,6 +358,9 @@ export default function PSXPage() {
         {/* Gold accent line */}
         <div className="h-px bg-gradient-to-r from-transparent via-amber-500/50 to-transparent" />
       </div>
+
+      {/* ── Your Holdings preview ── */}
+      <HoldingsWidget />
 
       {/* ── Market breadth ── */}
       <AnimatePresence>
