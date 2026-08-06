@@ -432,6 +432,37 @@
   .closing-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px rgba(245,165,36,0.7); }
   .closing-url { font-family: 'Space Mono', ui-monospace, monospace; font-size: 14px; color: var(--ink); }
 
+  /* ── Slide 07+ emphasis pass: bigger, bolder, more legible ── */
+
+  .slide-focus .eyebrow { font-size: 13px; }
+  .slide-focus .slide-title { font-size: clamp(34px, 5.4vw, 64px); }
+  .slide-focus .slide-sub { font-size: clamp(17px, 1.75vw, 21px); line-height: 1.6; max-width: 68ch; color: #c3c8d4; }
+
+  .slide-focus .notes { justify-content: flex-start; }
+  .slide-focus .note-list { gap: 18px; }
+  .slide-focus .note-key { font-size: 12px; padding: 4px 9px; margin-top: 3px; }
+  .slide-focus .note-body { font-size: 16.5px; line-height: 1.6; }
+
+  .slide-focus .platform-legend span { font-size: 12px; }
+
+  .slide-focus .scenario-flow { gap: clamp(16px, 2.4vh, 24px); }
+  .slide-focus .scenario-flow::before { left: 18px; }
+  .slide-focus .scenario-step { grid-template-columns: 38px auto 1fr; gap: 16px; }
+  .slide-focus .step-num { width: 38px; height: 38px; font-size: 15px; }
+  .slide-focus .step-tag { font-size: 11.5px; padding: 5px 11px; margin-top: 8px; }
+  .slide-focus .step-body { font-size: 17.5px; line-height: 1.7; padding-top: 7px; }
+
+  .slide-focus .ref-card h3 { font-size: 24px; }
+  .slide-focus .ref-card p.ref-sub { font-size: 16px; }
+  .slide-focus .ref-row { gap: 18px; padding: 16px 0; }
+  .slide-focus .ref-label { font-size: 12px; padding: 5px 10px; }
+  .slide-focus .ref-desc { font-size: 17px; line-height: 1.7; }
+
+  .slide-focus .caveat { font-size: 15.5px; line-height: 1.65; padding: 16px 18px; }
+
+  .slide-focus .closing-body { font-size: 20px; line-height: 1.75; max-width: 62ch; }
+  .slide-focus .closing-url { font-size: 17px; }
+
   /* ── Nav chrome ──────────────────────────────────────────── */
 
   .progress-rail {
@@ -660,7 +691,7 @@
   </section>
 
   <!-- Slide 7 — Signal to trade -->
-  <section class="slide">
+  <section class="slide slide-focus">
     <p class="eyebrow">06 — Taking action</p>
     <h1 class="slide-title">This page decides <i>what</i>. Your broker executes <i>it</i></h1>
     <p class="slide-sub">PSX Portfolio never places an order — it's research. When you're ready to act, that
@@ -683,7 +714,7 @@
   </section>
 
   <!-- Slide 8 — Scenario: new buy -->
-  <section class="slide">
+  <section class="slide slide-focus">
     <p class="eyebrow">07 — Scenario</p>
     <h1 class="slide-title">You don't own it yet — but Worth Investing In flags one</h1>
     <p class="slide-sub">A concrete run-through of using both platforms together, start to finish.</p>
@@ -702,7 +733,7 @@
   </section>
 
   <!-- Slide 9 — Scenario: holding turns sell -->
-  <section class="slide">
+  <section class="slide slide-focus">
     <p class="eyebrow">08 — Scenario</p>
     <h1 class="slide-title">A holding you own turns Sell</h1>
     <p class="slide-sub">The same two-platform pattern, running the other direction.</p>
@@ -722,7 +753,7 @@
   </section>
 
   <!-- Slide 10 — Reference -->
-  <section class="slide">
+  <section class="slide slide-focus">
     <p class="eyebrow">09 — Quick reference</p>
     <h1 class="slide-title">Two things worth knowing</h1>
     <p class="slide-sub">The two questions that come up most.</p>
@@ -745,8 +776,8 @@
     </div>
   </section>
 
-  <!-- Slide 8 — Closing -->
-  <section class="slide closing-slide">
+  <!-- Slide 11 — Closing -->
+  <section class="slide closing-slide slide-focus">
     <p class="eyebrow">That's the whole page</p>
     <h1 class="slide-title">Go take a look</h1>
     <p class="closing-body">Prices and technical signals refresh live from Yahoo Finance and PSX's own
