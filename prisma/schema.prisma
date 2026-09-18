@@ -28,7 +28,6 @@ model User {
   watchlist     Watchlist[]
   proposals     TradeProposal[]
   signalWeights SignalWeight[]
-  psxHoldings   PsxHolding[]
 }
 
 model Account {
@@ -192,23 +191,6 @@ model MarketSnapshot {
   createdAt  DateTime @default(now())
 
   @@index([symbol, createdAt])
-}
-
-// Personal PSX (Pakistan Stock Exchange) stock holdings, marked to live prices
-model PsxHolding {
-  id         String   @id @default(cuid())
-  userId     String
-  symbol     String   // e.g. "EFERT" (Yahoo Finance suffix ".KA" added at fetch time)
-  company    String
-  quantity   Float
-  avgBuyRate Float
-  form       String   @default("Physical") // Physical | CDC
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, symbol])
 }
 
 enum Plan {

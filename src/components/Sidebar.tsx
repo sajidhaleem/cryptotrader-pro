@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  ChevronRight, Brain, Shield, Wallet, BarChart2, TrendingUp, LogOut,
+  ChevronRight, Brain, Shield, Wallet, BarChart2, LogOut,
 } from "lucide-react";
 
 const nav = [
@@ -17,7 +17,6 @@ const nav = [
   { href: "/bots",          label: "Bots",           icon: Bot,             group: "crypto" },
   { href: "/signals",       label: "Signals",        icon: LineChart,       group: "crypto" },
   { href: "/charts",        label: "Charts",         icon: BarChart2,       group: "crypto", badge: "NEW" },
-  { href: "/psx",           label: "PSX Portfolio",  icon: TrendingUp,      group: "psx",    badge: "PKR" },
   { href: "/settings",      label: "Settings",       icon: Settings,        group: "meta" },
 ];
 
@@ -66,43 +65,6 @@ export default function Sidebar() {
               {label}
               {badge && !active && (
                 <span className="ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#7c3aed]/20 text-[#a78bfa]">{badge}</span>
-              )}
-              {active && <ChevronRight className="w-3.5 h-3.5 ml-auto text-black/60" />}
-            </Link>
-          );
-        })}
-
-        {/* Divider */}
-        <div className="py-2">
-          <div className="h-px bg-[#1e2130]" />
-        </div>
-
-        {/* PSX section */}
-        <p className="px-3 mb-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-[#92400e]">Pakistan</p>
-        {nav.filter(n => n.group === "psx").map(({ href, label, icon: Icon, badge }) => {
-          const active = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
-                active
-                  ? "text-black bg-amber-500"
-                  : "text-[#64748b] hover:text-amber-300 hover:bg-amber-500/8"
-              }`}
-            >
-              {active && (
-                <motion.div
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-xl bg-amber-500"
-                  style={{ zIndex: -1 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                />
-              )}
-              <Icon className={`w-4 h-4 flex-shrink-0 ${active ? "text-black" : "text-amber-600"}`} />
-              {label}
-              {badge && !active && (
-                <span className="ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400">{badge}</span>
               )}
               {active && <ChevronRight className="w-3.5 h-3.5 ml-auto text-black/60" />}
             </Link>

@@ -7,14 +7,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, Zap, Bot, LineChart, Settings,
-  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, TrendingUp, LogOut,
+  Brain, Wallet, BarChart2, MoreHorizontal, X, Shield, LogOut,
 } from "lucide-react";
 
 // Always visible in the bottom bar
 const primaryTabs = [
   { href: "/dashboard", label: "Home",    icon: LayoutDashboard, exact: true },
   { href: "/signals",   label: "Signals", icon: LineChart },
-  { href: "/psx",       label: "PSX",     icon: TrendingUp, psx: true },
+  { href: "/trade",     label: "Trade",   icon: Zap },
   { href: "/bots",      label: "Bots",    icon: Bot },
 ];
 
@@ -28,12 +28,6 @@ const navGroups = [
       { href: "/charts",    label: "Charts",     icon: BarChart2, badge: "NEW" },
       { href: "/trade",     label: "Trade",      icon: Zap },
       { href: "/bots",      label: "Bots",       icon: Bot },
-    ],
-  },
-  {
-    label: "Pakistan",
-    items: [
-      { href: "/psx", label: "PSX Portfolio", icon: TrendingUp, badge: "PKR", psx: true },
     ],
   },
   {
@@ -74,8 +68,7 @@ export default function MobileNav() {
         {primaryTabs.map((tab) => {
           const Icon = tab.icon;
           const active = isActive(tab.href, tab.exact);
-          const isPsx = (tab as { psx?: boolean }).psx;
-          const activeColor = isPsx ? "text-amber-400" : "text-[#00ff88]";
+          const activeColor = "text-[#00ff88]";
           const inactiveColor = "text-[#475569] hover:text-[#94a3b8]";
           return (
             <Link
@@ -154,7 +147,6 @@ export default function MobileNav() {
                       {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isActive(item.href, (item as { exact?: boolean }).exact);
-                        const isPsx = (item as { psx?: boolean }).psx;
                         const badgeVal = (item as { badge?: string }).badge;
                         return (
                           <Link
@@ -163,28 +155,18 @@ export default function MobileNav() {
                             onClick={() => setSheetOpen(false)}
                             className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all ${
                               active
-                                ? isPsx
-                                  ? "bg-amber-500/15 text-amber-400"
-                                  : "bg-[#00ff88]/15 text-[#00ff88]"
-                                : isPsx
-                                  ? "text-[#64748b] hover:bg-amber-500/8 hover:text-amber-300"
-                                  : "text-[#64748b] hover:bg-white/5 hover:text-white"
+                                ? "bg-[#00ff88]/15 text-[#00ff88]"
+                                : "text-[#64748b] hover:bg-white/5 hover:text-white"
                             }`}
                           >
                             <Icon
                               className={`h-[18px] w-[18px] shrink-0 ${
-                                active
-                                  ? isPsx ? "text-amber-400" : "text-[#00ff88]"
-                                  : isPsx ? "text-amber-700" : "text-[#475569]"
+                                active ? "text-[#00ff88]" : "text-[#475569]"
                               }`}
                             />
                             {item.label}
                             {badgeVal && !active && (
-                              <span className={`ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                                isPsx
-                                  ? "bg-amber-500/15 text-amber-400"
-                                  : "bg-[#7c3aed]/20 text-[#a78bfa]"
-                              }`}>
+                              <span className="ml-auto px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#7c3aed]/20 text-[#a78bfa]">
                                 {badgeVal}
                               </span>
                             )}
