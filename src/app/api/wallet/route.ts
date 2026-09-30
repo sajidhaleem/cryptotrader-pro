@@ -1,9 +1,8 @@
 import { prisma, getOwnerId } from "@/lib/db";
 import { decrypt } from "@/lib/utils";
 import crypto from "crypto";
-import axios from "axios";
+import { cg } from "@/lib/market-data";
 
-const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 
 export const ASSET_TO_CG: Record<string, string> = {
   BTC: "bitcoin", ETH: "ethereum", BNB: "binancecoin", SOL: "solana",
@@ -69,9 +68,9 @@ export async function GET(req: Request) {
     if (cgAssets.length > 0) {
       const ids = [...new Set(cgAssets.map((a) => ASSET_TO_CG[a]))].join(",");
       try {
-        const { data } = await axios.get<Record<string, { usd: number; usd_24h_change: number }>>(
-          `${COINGECKO_BASE}/simple/price`,
-          { params: { ids, vs_currencies: "usd", include_24hr_change: true }, timeout: 8000 }
+        const data = await cg<Record<string, { usd: number; usd_24h_change: number }>>(
+          "/simple/price",
+          { ids, vs_currencies: "usd", include_24hr_change: true },
         );
         for (const a of cgAssets) {
           const d = data[ASSET_TO_CG[a]];

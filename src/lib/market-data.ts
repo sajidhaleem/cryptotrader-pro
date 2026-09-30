@@ -66,12 +66,13 @@ export async function getMarketData(symbol: string): Promise<MarketData | null> 
 
   try {
     const [coin, history] = await Promise.all([
-      fetch(`${COINGECKO_BASE}/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false`, {
-        next: { revalidate: 300 },
-      }).then((r) => r.json()),
-      fetch(`${COINGECKO_BASE}/coins/${coinId}/market_chart?vs_currency=usd&days=90&interval=daily`, {
-        next: { revalidate: 3600 },
-      }).then((r) => r.json()),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cg<any>(
+        `/coins/${coinId}`,
+        { localization: false, tickers: false, community_data: false, developer_data: false },
+        300,
+      ),
+      cg<{ prices?: [number, number][] }>(`/coins/${coinId}/market_chart`, { vs_currency: "usd", days: 90, interval: "daily" }, 3600),
     ]);
 
     const priceHistory: number[] = (history.prices ?? []).map(([, p]: [number, number]) => p);
@@ -137,6 +138,30 @@ export async function getNewsSentiment(symbol: string): Promise<{ score: number;
   }
 }
 
+// ─── CoinGecko access: shared cache + last-good fallback ───
+// The free tier rate-limits hard (429), and every page load used to make its
+// own uncached calls, so a busy minute returned errors that the UI showed as
+// $0 prices and empty charts. Every CoinGecko call now goes through here:
+// - Next's fetch cache (`revalidate`) shares one response across requests and
+//   function instances, so N visitors cost one upstream call per TTL;
+// - on any failure the last good response for the same URL is served instead.
+const lastGood = new Map<string, unknown>();
+
+export async function cg<T>(path: string, params: Record<string, string | number | boolean>, ttl = 60): Promise<T> {
+  const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+  const url = `${COINGECKO_BASE}${path}?${qs}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: ttl }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
+    const data = (await res.json()) as T;
+    lastGood.set(url, data);
+    return data;
+  } catch (err) {
+    if (lastGood.has(url)) return lastGood.get(url) as T;
+    throw err;
+  }
+}
+
 // ─── Drop-in replacements for Binance public API (geo-blocked on US servers) ───
 
 export const COINGECKO_IDS = SYMBOL_MAP;
@@ -149,20 +174,14 @@ function cgId(symbol: string): string {
 
 export async function getPriceCG(symbol: string): Promise<number> {
   const id = cgId(symbol);
-  const { data } = await axios.get<Record<string, { usd: number }>>(
-    `${COINGECKO_BASE}/simple/price`,
-    { params: { ids: id, vs_currencies: "usd" } }
-  );
+  const data = await cg<Record<string, { usd: number }>>(`/simple/price`, { ids: id, vs_currencies: "usd" });
   return data[id].usd;
 }
 
 export async function getPricesCG(symbols: string[]): Promise<Record<string, number>> {
   const valid = symbols.filter(s => SYMBOL_MAP[s]);
   const ids = valid.map(s => SYMBOL_MAP[s]).join(",");
-  const { data } = await axios.get<Record<string, { usd: number }>>(
-    `${COINGECKO_BASE}/simple/price`,
-    { params: { ids, vs_currencies: "usd" } }
-  );
+  const data = await cg<Record<string, { usd: number }>>(`/simple/price`, { ids, vs_currencies: "usd" });
   const result: Record<string, number> = {};
   valid.forEach(sym => {
     const id = SYMBOL_MAP[sym];
@@ -173,10 +192,7 @@ export async function getPricesCG(symbols: string[]): Promise<Record<string, num
 
 export async function get24hrStatsCG(symbol: string) {
   const id = cgId(symbol);
-  const { data } = await axios.get<Record<string, { usd: number; usd_24h_change: number; usd_24h_vol: number }>>(
-    `${COINGECKO_BASE}/simple/price`,
-    { params: { ids: id, vs_currencies: "usd", include_24hr_change: true, include_24hr_vol: true } }
-  );
+  const data = await cg<Record<string, { usd: number; usd_24h_change: number; usd_24h_vol: number }>>(`/simple/price`, { ids: id, vs_currencies: "usd", include_24hr_change: true, include_24hr_vol: true });
   const d = data[id];
   return {
     symbol,
@@ -195,10 +211,7 @@ export async function get24hrStatsBatchCG(
 ): Promise<Record<string, { price: number; priceChangePercent: number }>> {
   const valid = symbols.filter(s => SYMBOL_MAP[s]);
   const ids = valid.map(s => SYMBOL_MAP[s]).join(",");
-  const { data } = await axios.get<Record<string, { usd: number; usd_24h_change: number }>>(
-    `${COINGECKO_BASE}/simple/price`,
-    { params: { ids, vs_currencies: "usd", include_24hr_change: true } }
-  );
+  const data = await cg<Record<string, { usd: number; usd_24h_change: number }>>(`/simple/price`, { ids, vs_currencies: "usd", include_24hr_change: true });
   const result: Record<string, { price: number; priceChangePercent: number }> = {};
   valid.forEach(sym => {
     const id = SYMBOL_MAP[sym];
@@ -216,10 +229,7 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
 
   if (interval === "1w" || interval === "1M") {
     const days = interval === "1w" ? Math.min(limit * 7 + 14, 1825) : Math.min(limit * 31 + 31, 1825);
-    const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
-      `${COINGECKO_BASE}/coins/${id}/market_chart`,
-      { params: { vs_currency: "usd", days } }
-    );
+    const data = await cg<{ prices: [number, number][]; total_volumes: [number, number][] }>(`/coins/${id}/market_chart`, { vs_currency: "usd", days });
 
     const groups = new Map<string, { timestamps: number[]; prices: number[]; volumes: number[] }>();
     data.prices.forEach(([t, p], i) => {
@@ -257,10 +267,7 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
 
   if (interval === "4h" || interval === "12h") {
     const days = limit > 42 ? 14 : 7;
-    const { data } = await axios.get<[number, number, number, number, number][]>(
-      `${COINGECKO_BASE}/coins/${id}/ohlc`,
-      { params: { vs_currency: "usd", days } }
-    );
+    const data = await cg<[number, number, number, number, number][]>(`/coins/${id}/ohlc`, { vs_currency: "usd", days });
     return data.slice(-limit).map(([t, o, h, l, c]) => ({
       openTime: t - 4 * 3600e3,
       open: o, high: h, low: l, close: c,
@@ -273,10 +280,7 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
     // market_chart with days > 90 auto-returns daily granularity (free tier)
     // OHLC returns 4-day candles for large day ranges, causing insufficient data
     const days = Math.max(limit + 20, 100);
-    const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
-      `${COINGECKO_BASE}/coins/${id}/market_chart`,
-      { params: { vs_currency: "usd", days } }
-    );
+    const data = await cg<{ prices: [number, number][]; total_volumes: [number, number][] }>(`/coins/${id}/market_chart`, { vs_currency: "usd", days });
     const prices  = data.prices.slice(-limit);
     const volumes = data.total_volumes.slice(-limit);
     return prices.map(([t, c], i) => {
@@ -295,10 +299,7 @@ export async function getKlinesCG(symbol: string, interval: string, limit: numbe
 
   // 1h / 30m — hourly market_chart
   const days = Math.min(Math.ceil(limit / 24) + 2, 90);
-  const { data } = await axios.get<{ prices: [number, number][]; total_volumes: [number, number][] }>(
-    `${COINGECKO_BASE}/coins/${id}/market_chart`,
-    { params: { vs_currency: "usd", days, interval: "hourly" } }
-  );
+  const data = await cg<{ prices: [number, number][]; total_volumes: [number, number][] }>(`/coins/${id}/market_chart`, { vs_currency: "usd", days, interval: "hourly" });
   const prices  = data.prices.slice(-limit);
   const volumes = data.total_volumes.slice(-limit);
   return prices.map(([t, c], i) => {
