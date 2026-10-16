@@ -105,6 +105,18 @@ npm run type-check
 
 ---
 
+## Development
+
+**Pre-commit secret scan**: Husky runs a `pre-commit` hook (`.husky/pre-commit`) that scans staged changes with [gitleaks](https://github.com/gitleaks/gitleaks) (`gitleaks protect --staged --redact -v --config .gitleaks.toml`) before every commit. If `gitleaks` isn't installed on your machine, the hook prints a warning and lets the commit through — it only blocks when gitleaks is present and finds a leak. Install it via `winget install gitleaks` (Windows), `brew install gitleaks` (macOS), or see the [gitleaks releases](https://github.com/gitleaks/gitleaks/releases).
+
+Hooks are wired up automatically by `npm install` (via the `prepare` script). If `git config core.hooksPath` doesn't print `.husky/_`, run `npx husky` once to re-link it.
+
+**CI**: `.github/workflows/ci.yml` runs `npm ci`, `npm run lint`, `npm test`, and `npm run build` on every push and PR to `master`.
+
+**Dependency updates**: `.github/dependabot.yml` opens weekly PRs for npm dependencies against `master`, with minor/patch updates grouped into a single PR.
+
+---
+
 ## AI Signal Indicators
 
 | Indicator | Timeframe | What It Detects |
