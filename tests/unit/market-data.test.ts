@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import axios from "axios";
 
 vi.mock("axios");
@@ -16,8 +16,19 @@ import {
   COINGECKO_IDS,
 } from "../../src/lib/market-data";
 
+// CoinGecko calls go through native fetch (the cg() helper); Bybit still uses axios.
+const fetchMock = vi.fn();
+const fakeJson = (data: unknown) =>
+  ({ ok: true, status: 200, json: async () => data }) as unknown as typeof fetch;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("COINGECKO_IDS", () => {
@@ -37,16 +48,13 @@ describe("COINGECKO_IDS", () => {
 
 describe("getPriceCG", () => {
   it("returns the USD price for a supported symbol", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { bitcoin: { usd: 65000 } },
-    });
+    fetchMock.mockResolvedValue(fakeJson({ bitcoin: { usd: 65000 } }));
 
     const price = await getPriceCG("BTCUSDT");
     expect(price).toBe(65000);
-    expect(mockAxios.get).toHaveBeenCalledWith(
-      "https://api.coingecko.com/api/v3/simple/price",
-      expect.objectContaining({ params: expect.objectContaining({ ids: "bitcoin" }) })
-    );
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("simple/price");
+    expect(url).toContain("ids=bitcoin");
   });
 
   it("throws for an unsupported symbol", async () => {
@@ -56,9 +64,7 @@ describe("getPriceCG", () => {
 
 describe("getPricesCG", () => {
   it("returns prices for multiple symbols", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { bitcoin: { usd: 65000 }, ethereum: { usd: 3500 } },
-    });
+    fetchMock.mockResolvedValue(fakeJson({ bitcoin: { usd: 65000 }, ethereum: { usd: 3500 } }));
 
     const prices = await getPricesCG(["BTCUSDT", "ETHUSDT"]);
     expect(prices["BTCUSDT"]).toBe(65000);
@@ -66,9 +72,7 @@ describe("getPricesCG", () => {
   });
 
   it("silently skips unsupported symbols", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { bitcoin: { usd: 65000 } },
-    });
+    fetchMock.mockResolvedValue(fakeJson({ bitcoin: { usd: 65000 } }));
 
     const prices = await getPricesCG(["BTCUSDT", "FAKECOIN"]);
     expect(prices["BTCUSDT"]).toBe(65000);
@@ -76,28 +80,24 @@ describe("getPricesCG", () => {
   });
 
   it("passes comma-joined IDs to CoinGecko", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { bitcoin: { usd: 65000 }, solana: { usd: 150 } },
-    });
+    fetchMock.mockResolvedValue(fakeJson({ bitcoin: { usd: 65000 }, solana: { usd: 150 } }));
 
     await getPricesCG(["BTCUSDT", "SOLUSDT"]);
-    const params = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][1].params;
-    expect(params.ids).toContain("bitcoin");
-    expect(params.ids).toContain("solana");
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("bitcoin");
+    expect(url).toContain("solana");
   });
 });
 
 describe("get24hrStatsCG", () => {
   it("returns correct stats shape", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: {
-        bitcoin: {
-          usd: 65000,
-          usd_24h_change: 2.5,
-          usd_24h_vol: 45_000_000_000,
-        },
+    fetchMock.mockResolvedValue(fakeJson({
+      bitcoin: {
+        usd: 65000,
+        usd_24h_change: 2.5,
+        usd_24h_vol: 45_000_000_000,
       },
-    });
+    }));
 
     const stats = await get24hrStatsCG("BTCUSDT");
     expect(stats.symbol).toBe("BTCUSDT");
@@ -108,9 +108,9 @@ describe("get24hrStatsCG", () => {
   });
 
   it("high is 1% above price and low is 1% below", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: { ethereum: { usd: 3500, usd_24h_change: -1, usd_24h_vol: 1e10 } },
-    });
+    fetchMock.mockResolvedValue(fakeJson({
+      ethereum: { usd: 3500, usd_24h_change: -1, usd_24h_vol: 1e10 },
+    }));
 
     const stats = await get24hrStatsCG("ETHUSDT");
     expect(stats.high).toBeCloseTo(3500 * 1.01, 2);
@@ -120,12 +120,10 @@ describe("get24hrStatsCG", () => {
 
 describe("get24hrStatsBatchCG", () => {
   it("returns stats for multiple symbols", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({
-      data: {
-        bitcoin: { usd: 65000, usd_24h_change: 2.5 },
-        ethereum: { usd: 3500, usd_24h_change: -1.2 },
-      },
-    });
+    fetchMock.mockResolvedValue(fakeJson({
+      bitcoin: { usd: 65000, usd_24h_change: 2.5 },
+      ethereum: { usd: 3500, usd_24h_change: -1.2 },
+    }));
 
     const batch = await get24hrStatsBatchCG(["BTCUSDT", "ETHUSDT"]);
     expect(batch["BTCUSDT"].price).toBe(65000);
@@ -135,7 +133,7 @@ describe("get24hrStatsBatchCG", () => {
   });
 
   it("skips unsupported symbols", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: {} });
+    fetchMock.mockResolvedValue(fakeJson({}));
     const batch = await get24hrStatsBatchCG(["FAKECOIN"]);
     expect(Object.keys(batch)).toHaveLength(0);
   });
@@ -143,19 +141,19 @@ describe("get24hrStatsBatchCG", () => {
 
 describe("getKlinesCG — 1h interval", () => {
   const makeHourlyResponse = (count: number) => ({
-    prices: Array.from({ length: count }, (_, i) => [Date.now() + i * 3600e3, 50000 + i * 10] as [number, number]),
-    total_volumes: Array.from({ length: count }, (_, i) => [Date.now() + i * 3600e3, 1e9] as [number, number]),
+    prices: Array.from({ length: count }, (_, i) => [1700000000000 + i * 3600e3, 50000 + i * 10] as [number, number]),
+    total_volumes: Array.from({ length: count }, (_, i) => [1700000000000 + i * 3600e3, 1e9] as [number, number]),
   });
 
   it("returns Kline array for 1h interval", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeHourlyResponse(200) });
+    fetchMock.mockResolvedValue(fakeJson(makeHourlyResponse(200)));
     const klines = await getKlinesCG("BTCUSDT", "1h", 100);
     expect(klines).toHaveLength(100);
     expect(klines[0]).toMatchObject({ open: expect.any(Number), high: expect.any(Number), low: expect.any(Number), close: expect.any(Number), volume: expect.any(Number) });
   });
 
   it("high >= close and low <= close", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeHourlyResponse(100) });
+    fetchMock.mockResolvedValue(fakeJson(makeHourlyResponse(100)));
     const klines = await getKlinesCG("BTCUSDT", "1h", 50);
     for (const k of klines) {
       expect(k.high).toBeGreaterThanOrEqual(k.close);
@@ -164,9 +162,9 @@ describe("getKlinesCG — 1h interval", () => {
   });
 
   it("uses market_chart endpoint for 1h", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeHourlyResponse(50) });
+    fetchMock.mockResolvedValue(fakeJson(makeHourlyResponse(50)));
     await getKlinesCG("ETHUSDT", "1h", 24);
-    const url = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("market_chart");
   });
 });
@@ -174,44 +172,44 @@ describe("getKlinesCG — 1h interval", () => {
 describe("getKlinesCG — 4h interval", () => {
   const makeOhlcResponse = (count: number) =>
     Array.from({ length: count }, (_, i) => [
-      Date.now() + i * 4 * 3600e3, // time
-      49000 + i * 50,               // open
-      50000 + i * 50,               // high
-      48000 + i * 50,               // low
-      49500 + i * 50,               // close
+      1700000000000 + i * 4 * 3600e3, // time
+      49000 + i * 50,                 // open
+      50000 + i * 50,                 // high
+      48000 + i * 50,                 // low
+      49500 + i * 50,                 // close
     ] as [number, number, number, number, number]);
 
   it("returns Kline array for 4h interval", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeOhlcResponse(150) });
+    fetchMock.mockResolvedValue(fakeJson(makeOhlcResponse(150)));
     const klines = await getKlinesCG("BTCUSDT", "4h", 100);
     expect(klines.length).toBeLessThanOrEqual(100);
     expect(klines[0].high).toBeGreaterThan(klines[0].low);
   });
 
   it("uses ohlc endpoint for 4h", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeOhlcResponse(50) });
+    fetchMock.mockResolvedValue(fakeJson(makeOhlcResponse(50)));
     await getKlinesCG("BTCUSDT", "4h", 50);
-    const url = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/ohlc");
   });
 });
 
 describe("getKlinesCG — 1d interval", () => {
   const makeDailyResponse = (count: number) => ({
-    prices: Array.from({ length: count }, (_, i) => [Date.now() + i * 86400e3, 50000 + i * 10] as [number, number]),
-    total_volumes: Array.from({ length: count }, (_, i) => [Date.now() + i * 86400e3, 1e9] as [number, number]),
+    prices: Array.from({ length: count }, (_, i) => [1700000000000 + i * 86400e3, 50000 + i * 10] as [number, number]),
+    total_volumes: Array.from({ length: count }, (_, i) => [1700000000000 + i * 86400e3, 1e9] as [number, number]),
   });
 
   it("returns Kline array for 1d interval", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeDailyResponse(120) });
+    fetchMock.mockResolvedValue(fakeJson(makeDailyResponse(120)));
     const klines = await getKlinesCG("BTCUSDT", "1d", 100);
     expect(klines.length).toBeLessThanOrEqual(100);
   });
 
   it("uses market_chart endpoint for 1d", async () => {
-    mockAxios.get = vi.fn().mockResolvedValue({ data: makeDailyResponse(120) });
+    fetchMock.mockResolvedValue(fakeJson(makeDailyResponse(120)));
     await getKlinesCG("BTCUSDT", "1d", 100);
-    const url = (mockAxios.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("market_chart");
   });
 });
@@ -226,7 +224,7 @@ describe("getKlinesBybit", () => {
   function makeBybitResponse(count: number) {
     // Bybit returns newest-first: [timestamp, open, high, low, close, volume, turnover]
     const list = Array.from({ length: count }, (_, i) => [
-      String(Date.now() - (count - 1 - i) * 86400e3),
+      String(1700000000000 - (count - 1 - i) * 86400e3),
       "49000", "51000", "48000", "50000", "1000", "50000000",
     ] as [string, string, string, string, string, string, string]).reverse();
     return { retCode: 0, retMsg: "OK", result: { list } };
@@ -253,7 +251,7 @@ describe("getKlinesBybit", () => {
 
   it("falls back to linear when spot returns empty list", async () => {
     mockAxios.get = vi.fn()
-      .mockResolvedValueOnce({ data: emptyBybit })          // spot empty
+      .mockResolvedValueOnce({ data: emptyBybit })            // spot empty
       .mockResolvedValueOnce({ data: makeBybitResponse(50) }); // linear ok
     const klines = await getKlinesBybit("BTCUSDT", "1d", 50);
     expect(klines).toHaveLength(50);
@@ -274,12 +272,9 @@ describe("getKlinesBybit", () => {
 
 describe("getFearGreedIndex", () => {
   it("returns value and classification from Alternative.me", async () => {
-    // getFearGreedIndex uses native fetch, not axios — mock global fetch
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({
-        data: [{ value: "25", value_classification: "Fear" }],
-      }),
-    }) as unknown as typeof fetch;
+    fetchMock.mockResolvedValue(fakeJson({
+      data: [{ value: "25", value_classification: "Fear" }],
+    }));
 
     const result = await getFearGreedIndex();
     expect(result.value).toBe(25);
@@ -287,7 +282,7 @@ describe("getFearGreedIndex", () => {
   });
 
   it("returns neutral defaults on fetch failure", async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+    fetchMock.mockRejectedValue(new Error("Network error"));
     const result = await getFearGreedIndex();
     expect(result.value).toBe(50);
     expect(result.classification).toBe("Neutral");
@@ -296,22 +291,20 @@ describe("getFearGreedIndex", () => {
 
 describe("getNewsSentiment", () => {
   it("returns score 0 and empty items on failure", async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+    fetchMock.mockRejectedValue(new Error("Network error"));
     const result = await getNewsSentiment("BTCUSDT");
     expect(result.score).toBe(0);
     expect(result.items).toHaveLength(0);
   });
 
   it("calculates positive score when most news is positive", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({
-        results: [
-          { title: "Bitcoin hits ATH", votes: { positive: 10, negative: 1 }, published_at: "2025-01-01", url: "u1" },
-          { title: "BTC gains", votes: { positive: 8, negative: 1 }, published_at: "2025-01-01", url: "u2" },
-          { title: "Crypto boom", votes: { positive: 12, negative: 0 }, published_at: "2025-01-01", url: "u3" },
-        ],
-      }),
-    }) as unknown as typeof fetch;
+    fetchMock.mockResolvedValue(fakeJson({
+      results: [
+        { title: "Bitcoin hits ATH", votes: { positive: 10, negative: 1 }, published_at: "2025-01-01", url: "u1" },
+        { title: "BTC gains", votes: { positive: 8, negative: 1 }, published_at: "2025-01-01", url: "u2" },
+        { title: "Crypto boom", votes: { positive: 12, negative: 0 }, published_at: "2025-01-01", url: "u3" },
+      ],
+    }));
 
     const result = await getNewsSentiment("BTCUSDT");
     expect(result.score).toBeGreaterThan(0);
@@ -319,14 +312,12 @@ describe("getNewsSentiment", () => {
   });
 
   it("calculates negative score when most news is negative", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({
-        results: [
-          { title: "BTC crashes", votes: { positive: 1, negative: 10 }, published_at: "2025-01-01", url: "u1" },
-          { title: "Crypto winter", votes: { positive: 0, negative: 15 }, published_at: "2025-01-01", url: "u2" },
-        ],
-      }),
-    }) as unknown as typeof fetch;
+    fetchMock.mockResolvedValue(fakeJson({
+      results: [
+        { title: "BTC crashes", votes: { positive: 1, negative: 10 }, published_at: "2025-01-01", url: "u1" },
+        { title: "Crypto winter", votes: { positive: 0, negative: 15 }, published_at: "2025-01-01", url: "u2" },
+      ],
+    }));
 
     const result = await getNewsSentiment("BTCUSDT");
     expect(result.score).toBeLessThan(0);
